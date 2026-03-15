@@ -8,4 +8,5 @@ export interface Room {
   players: RoomPlayer[];
   gameState: GameState | null;
   status: 'waiting' | 'playing' | 'finished';
+  lastActivityAt: number;
 }

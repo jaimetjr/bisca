@@ -1,4 +1,4 @@
-import { Card, RANKS, SUITS } from './types';
+import { Card, RANKS, SUITS } from '../types';
 
 export function createDeck(): Card[] {
   const deck: Card[] = [];

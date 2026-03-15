@@ -1,21 +1,49 @@
 import { WebSocket } from 'ws';
 import { Room } from './models/room';
-import { Card, GameState } from '../shared/lib/types';
+import { GameState } from '../shared/lib/types';
 import { completeTrick, createGameState, playCard } from '../shared/lib/brisca/engine';
+import {
+  ClientMessage,
+  ServerMessage,
+  RoomPlayerInfo,
+} from '../shared/lib/types/messages';
+import {
+  TRICK_DISPLAY_MS,
+  ROOM_CODE_LENGTH,
+  ROOM_EXPIRY_MS,
+  ROOM_CLEANUP_AFTER_GAME_MS,
+} from '../shared/constants/game';
 
 const rooms = new Map<string, Room>();
 const playerRooms = new Map<WebSocket, string>();
 
+// ─── Room expiry cleanup ──────────────────────────────────────────────────────
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, room] of rooms.entries()) {
+    if (now - room.lastActivityAt > ROOM_EXPIRY_MS) {
+      for (const p of room.players) {
+        sendTo(p.ws, { type: 'error', message: 'Room expired due to inactivity', code: 'ROOM_NOT_FOUND' });
+        playerRooms.delete(p.ws);
+      }
+      rooms.delete(code);
+    }
+  }
+}, 60_000);
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
     code += chars[Math.floor(Math.random() * chars.length)];
   }
   return code;
 }
 
-function broadcast(room: Room, message: object, exclude?: WebSocket) {
+function broadcast(room: Room, message: ServerMessage, exclude?: WebSocket) {
   const msg = JSON.stringify(message);
   for (const player of room.players) {
     if (player.ws !== exclude && player.ws.readyState === WebSocket.OPEN) {
@@ -24,49 +52,14 @@ function broadcast(room: Room, message: object, exclude?: WebSocket) {
   }
 }
 
-function sendTo(ws: WebSocket, message: object) {
+function sendTo(ws: WebSocket, message: ServerMessage) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(message));
   }
 }
 
-function getPlayerList(room: Room) {
+function getPlayerList(room: Room): RoomPlayerInfo[] {
   return room.players.map(p => ({ id: p.id, name: p.name }));
-}
-
-export function handleWebSocket(ws: WebSocket) {
-  ws.on('message', (raw) => {
-    try {
-      const data = JSON.parse(raw.toString());
-      handleMessage(ws, data);
-    } catch (e) {
-      sendTo(ws, { type: 'error', message: 'Invalid message format' });
-    }
-  });
-
-  ws.on('close', () => {
-    const roomCode = playerRooms.get(ws);
-    if (roomCode) {
-      const room = rooms.get(roomCode);
-      if (room) {
-        const leavingPlayer = room.players.find(p => p.ws === ws);
-        const leavingId = leavingPlayer?.id || '';
-        room.players = room.players.filter(p => p.ws !== ws);
-        if (room.players.length === 0) {
-          rooms.delete(roomCode);
-        } else {
-          if (room.hostId === leavingId) {
-            room.hostId = room.players[0].id;
-          }
-          broadcast(room, {
-            type: 'player_left',
-            players: getPlayerList(room),
-          });
-        }
-      }
-      playerRooms.delete(ws);
-    }
-  });
 }
 
 function getPlayerId(ws: WebSocket): string {
@@ -78,7 +71,59 @@ function getPlayerId(ws: WebSocket): string {
   return player?.id || '';
 }
 
-function handleMessage(ws: WebSocket, data: any) {
+function touchRoom(room: Room) {
+  room.lastActivityAt = Date.now();
+}
+
+function broadcastPlayerViews(room: Room, state: GameState, msgType: 'game_start' | 'game_update') {
+  for (const player of room.players) {
+    const view = createPlayerView(state, player.id);
+    if (msgType === 'game_start') {
+      sendTo(player.ws, { type: 'game_start', gameState: view, playerId: player.id });
+    } else {
+      sendTo(player.ws, { type: 'game_update', gameState: view });
+    }
+  }
+}
+
+// ─── WebSocket entry point ────────────────────────────────────────────────────
+
+export function handleWebSocket(ws: WebSocket) {
+  ws.on('message', (raw) => {
+    try {
+      const data = JSON.parse(raw.toString()) as ClientMessage;
+      handleMessage(ws, data);
+    } catch {
+      sendTo(ws, { type: 'error', message: 'Invalid message format', code: 'INVALID_MESSAGE' });
+    }
+  });
+
+  ws.on('close', () => {
+    const roomCode = playerRooms.get(ws);
+    if (roomCode) {
+      const room = rooms.get(roomCode);
+      if (room) {
+        touchRoom(room);
+        const leavingPlayer = room.players.find(p => p.ws === ws);
+        const leavingId = leavingPlayer?.id || '';
+        room.players = room.players.filter(p => p.ws !== ws);
+        if (room.players.length === 0) {
+          rooms.delete(roomCode);
+        } else {
+          if (room.hostId === leavingId) {
+            room.hostId = room.players[0].id;
+          }
+          broadcast(room, { type: 'player_left', players: getPlayerList(room) });
+        }
+      }
+      playerRooms.delete(ws);
+    }
+  });
+}
+
+// ─── Message handler ──────────────────────────────────────────────────────────
+
+function handleMessage(ws: WebSocket, data: ClientMessage) {
   switch (data.type) {
     case 'create_room': {
       let code = generateRoomCode();
@@ -92,6 +137,7 @@ function handleMessage(ws: WebSocket, data: any) {
         players: [{ id: playerId, name: data.playerName || 'Host', ws }],
         gameState: null,
         status: 'waiting',
+        lastActivityAt: Date.now(),
       };
       rooms.set(code, room);
       playerRooms.set(ws, code);
@@ -109,21 +155,22 @@ function handleMessage(ws: WebSocket, data: any) {
     case 'join_room': {
       const room = rooms.get(data.roomCode?.toUpperCase());
       if (!room) {
-        sendTo(ws, { type: 'error', message: 'Room not found' });
+        sendTo(ws, { type: 'error', message: 'Room not found', code: 'ROOM_NOT_FOUND' });
         return;
       }
       if (room.status !== 'waiting') {
-        sendTo(ws, { type: 'error', message: 'Game already in progress' });
+        sendTo(ws, { type: 'error', message: 'Game already in progress', code: 'GAME_ALREADY_STARTED' });
         return;
       }
       if (room.players.length >= room.maxPlayers) {
-        sendTo(ws, { type: 'error', message: 'Room is full' });
+        sendTo(ws, { type: 'error', message: 'Room is full', code: 'ROOM_FULL' });
         return;
       }
 
       const playerId = `p-${Date.now().toString(36)}`;
       room.players.push({ id: playerId, name: data.playerName || 'Player', ws });
       playerRooms.set(ws, room.code);
+      touchRoom(room);
 
       sendTo(ws, {
         type: 'room_joined',
@@ -133,10 +180,7 @@ function handleMessage(ws: WebSocket, data: any) {
         maxPlayers: room.maxPlayers,
       });
 
-      broadcast(room, {
-        type: 'player_joined',
-        players: getPlayerList(room),
-      }, ws);
+      broadcast(room, { type: 'player_joined', players: getPlayerList(room) }, ws);
       break;
     }
 
@@ -148,44 +192,35 @@ function handleMessage(ws: WebSocket, data: any) {
 
       const playerId = getPlayerId(ws);
       if (playerId !== room.hostId) {
-        sendTo(ws, { type: 'error', message: 'Only the host can start the game' });
+        sendTo(ws, { type: 'error', message: 'Only the host can start the game', code: 'NOT_HOST' });
         return;
       }
       if (room.players.length < 2) {
-        sendTo(ws, { type: 'error', message: 'Need at least 2 players' });
+        sendTo(ws, { type: 'error', message: 'Need at least 2 players', code: 'NEED_MORE_PLAYERS' });
         return;
       }
 
-      const configs = room.players.map(p => ({
-        id: p.id,
-        name: p.name,
-        isAI: false,
-      }));
+      const configs = room.players.map(p => ({ id: p.id, name: p.name, isAI: false }));
       const gameState = createGameState(configs);
       room.gameState = gameState;
       room.status = 'playing';
+      touchRoom(room);
 
-      for (const player of room.players) {
-        const playerView = createPlayerView(gameState, player.id);
-        sendTo(player.ws, {
-          type: 'game_start',
-          gameState: playerView,
-          playerId: player.id,
-        });
-      }
+      broadcastPlayerViews(room, gameState, 'game_start');
       break;
     }
 
     case 'reconnect': {
-      const pid = data.playerId as string;
+      const pid = data.playerId;
       for (const [code, room] of rooms.entries()) {
         const existing = room.players.find(p => p.id === pid);
         if (existing) {
           existing.ws = ws;
           playerRooms.set(ws, code);
+          touchRoom(room);
           if (room.gameState) {
             const view = createPlayerView(room.gameState, pid);
-            sendTo(ws, { type: 'game_update', gameState: view });
+            sendTo(ws, { type: 'reconnected', gameState: view });
           }
           break;
         }
@@ -202,42 +237,51 @@ function handleMessage(ws: WebSocket, data: any) {
       const playerId = getPlayerId(ws);
       const currentPlayer = room.gameState.players[room.gameState.currentPlayerIndex];
       if (currentPlayer.id !== playerId) {
-        sendTo(ws, { type: 'error', message: 'Not your turn' });
+        sendTo(ws, { type: 'error', message: 'Not your turn', code: 'NOT_YOUR_TURN' });
         return;
       }
 
-      const card = data.card as Card;
+      // Look up card by id from the player's actual hand (prevents spoofing)
+      const card = room.gameState.players
+        .find(p => p.id === playerId)
+        ?.hand.find(c => c.id === data.cardId);
+      if (!card) {
+        sendTo(ws, { type: 'error', message: 'Invalid card', code: 'INVALID_CARD' });
+        return;
+      }
+
       const newState = playCard(room.gameState, playerId, card);
       room.gameState = newState;
+      touchRoom(room);
 
       if (newState.phase === 'trickComplete') {
-        for (const player of room.players) {
-          const view = createPlayerView(newState, player.id);
-          sendTo(player.ws, { type: 'game_update', gameState: view });
-        }
+        broadcastPlayerViews(room, newState, 'game_update');
 
         setTimeout(() => {
-          if (room.gameState) {
+          if (room.gameState && room.gameState.phase === 'trickComplete') {
             room.gameState = completeTrick(room.gameState);
-            for (const player of room.players) {
-              const view = createPlayerView(room.gameState, player.id);
-              sendTo(player.ws, { type: 'game_update', gameState: view });
+            touchRoom(room);
+            broadcastPlayerViews(room, room.gameState, 'game_update');
+
+            // Schedule room cleanup after game ends
+            if (room.gameState.phase === 'gameOver') {
+              room.status = 'finished';
+              setTimeout(() => rooms.delete(roomCode), ROOM_CLEANUP_AFTER_GAME_MS);
             }
           }
-        }, 1500);
+        }, TRICK_DISPLAY_MS);
       } else {
-        for (const player of room.players) {
-          const view = createPlayerView(newState, player.id);
-          sendTo(player.ws, { type: 'game_update', gameState: view });
-        }
+        broadcastPlayerViews(room, newState, 'game_update');
       }
       break;
     }
   }
 }
 
+// ─── View helpers ─────────────────────────────────────────────────────────────
+
 function createPlayerView(state: GameState, playerId: string): GameState {
-  const view = JSON.parse(JSON.stringify(state)) as GameState;
+  const view = structuredClone(state) as GameState;
   for (const player of view.players) {
     if (player.id !== playerId) {
       player.hand = player.hand.map(() => ({

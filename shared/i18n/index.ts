@@ -16,7 +16,7 @@ function getDeviceLanguage(): string {
   return 'en';
 }
 
-const currentLanguage = getDeviceLanguage();
+let currentLanguage = getDeviceLanguage();
 
 export function t(key: string, params?: Record<string, string | number>): string {
   let text = translations[currentLanguage]?.[key] || translations['en']?.[key] || key;
@@ -37,3 +37,11 @@ export function getSuitName(suit: string): string {
 export function getCurrentLanguage(): string {
   return currentLanguage;
 }
+
+export function setLanguage(lang: string): void {
+  if (SUPPORTED_LANGUAGES.includes(lang)) {
+    currentLanguage = lang;
+  }
+}
+
+export const SUPPORTED_LANGUAGE_CODES = SUPPORTED_LANGUAGES;

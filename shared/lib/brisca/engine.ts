@@ -1,7 +1,8 @@
-import { Card, GameState, Player, TrickCard, Suit, CARD_POINTS, CARD_STRENGTH } from '../types';
+import { Card, GameState, Player, TrickCard, Suit, AIDifficulty, CARD_POINTS, CARD_STRENGTH } from '../types';
 import { createDeck, shuffleDeck, dealCards } from './deck';
+import { GAME_WIN_SCORE } from '../../constants/game';
 
-export function createGameState(playerConfigs: { id: string; name: string; isAI: boolean; team?: number }[]): GameState {
+export function createGameState(playerConfigs: { id: string; name: string; isAI: boolean; difficulty?: AIDifficulty; team?: number }[]): GameState {
   const deck = shuffleDeck(createDeck());
   const cardsPerPlayer = 3;
   let remaining = deck;
@@ -17,6 +18,7 @@ export function createGameState(playerConfigs: { id: string; name: string; isAI:
       capturedCards: [],
       score: 0,
       isAI: config.isAI,
+      difficulty: config.difficulty,
       team: config.team,
     });
   }
@@ -182,9 +184,9 @@ export function calculateScores(players: Player[]): { id: string; name: string; 
 export function getWinner(players: Player[]): Player | null {
   const scores = calculateScores(players);
   if (scores.length === 0) return null;
-  if (scores[0].score >= 61) {
+  if (scores[0].score >= GAME_WIN_SCORE) {
     return players.find(p => p.id === scores[0].id) || null;
   }
-  if (scores[0].score === 60) return null;
+  if (scores[0].score === GAME_WIN_SCORE - 1) return null;
   return players.find(p => p.id === scores[0].id) || null;
 }
