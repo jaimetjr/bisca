@@ -227,7 +227,7 @@ export default function LoginScreen() {
             )}
           </Pressable>
 
-          <Pressable onPress={() => { setIsRegistering(!isRegistering); setErrorMsg(''); }}>
+          <Pressable onPress={() => { setIsRegistering(!isRegistering); setErrorMsg(''); setEmail(''); setPassword(''); setFirstName(''); setLastName(''); setDateOfBirth(''); }}>
             <Text style={styles.switchText}>
               {isRegistering ? 'Already have an account? Sign in' : "Don't have an account? Register"}
             </Text>

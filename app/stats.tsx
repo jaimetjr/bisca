@@ -9,6 +9,7 @@ import { useAuth } from '@clerk/clerk-expo';
 import Colors from '@/shared/constants/colors';
 import { t } from '@/shared/i18n';
 import { getApiUrl } from '@/shared/query-client';
+import { useLanguage } from '@shared/hooks/useLanguage';
 import type { GameHistory } from '@/shared/lib/schema';
 
 interface StatsData {
@@ -23,6 +24,7 @@ export default function StatsScreen() {
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
   const { getToken } = useAuth();
+  useLanguage();
 
   const { data, isLoading, error } = useQuery<StatsData>({
     queryKey: ['stats'],

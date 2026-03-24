@@ -5,6 +5,7 @@ import GameCard from '@/components/Card';
 import CardSprite from '@/components/CardSprite';
 import { GameState } from '@/shared/lib/types';
 import { t, getSuitName } from '@/shared/i18n';
+import { useLanguage } from '@shared/hooks/useLanguage';
 
 interface GameTableProps {
   gameState: GameState;
@@ -12,6 +13,7 @@ interface GameTableProps {
 }
 
 export default function GameTable({ gameState, humanPlayerId }: GameTableProps) {
+  useLanguage();
   const { currentTrick, deck, trumpCard, trumpSuit, players } = gameState;
 
   const getPlayerPosition = (playerId: string): string => {
@@ -37,16 +39,19 @@ export default function GameTable({ gameState, humanPlayerId }: GameTableProps) 
     switch (position) {
       case 'bottom': return { bottom: 8, alignSelf: 'center' as const };
       case 'top': return { top: 8, alignSelf: 'center' as const };
-      case 'left': return { left: 20, top: '40%' as any };
-      case 'right': return { right: 20, top: '40%' as any };
+      case 'left': return { left: 8, top: '40%' as any };
+      case 'right': return { right: 8, top: '40%' as any };
       default: return {};
     }
   };
 
+  const hasDeck = deck.length > 0 || !!trumpCard;
+
   return (
     <View style={styles.table}>
+      {/* Trick area — takes all space except the deck sidebar */}
       <View style={styles.trickArea}>
-        {currentTrick.map((tc, idx) => {
+        {currentTrick.map((tc) => {
           const position = getPlayerPosition(tc.playerId);
           const player = players.find(p => p.id === tc.playerId);
           return (
@@ -58,29 +63,24 @@ export default function GameTable({ gameState, humanPlayerId }: GameTableProps) 
         })}
       </View>
 
-      <View style={styles.deckArea}>
-        {(deck.length > 0 || trumpCard) && (
-          <View style={styles.deckStack}>
-            {trumpCard && (
-              <View style={styles.trumpCardContainer}>
-                <GameCard card={trumpCard} size="small" />
-              </View>
-            )}
-            {deck.length > 0 && (
-              <View style={styles.deckTop}>
-                <CardSprite faceDown size="small" />
-                <Text style={styles.deckCount}>{deck.length + (trumpCard ? 1 : 0)}</Text>
-              </View>
-            )}
-          </View>
-        )}
-        {trumpSuit && (
-          <View style={styles.trumpIndicator}>
-            <Text style={styles.trumpLabel}>{t('table.trump')}</Text>
-            <Text style={styles.trumpSuit}>{getSuitName(trumpSuit)}</Text>
-          </View>
-        )}
-      </View>
+      {/* Deck sidebar — normal flex flow, never clips */}
+      {hasDeck && (
+        <View style={styles.deckSidebar}>
+          {deck.length > 0 && (
+            <View style={styles.deckItem}>
+              <CardSprite faceDown size="small" />
+              <Text style={styles.deckCount}>{deck.length + (trumpCard ? 1 : 0)}</Text>
+            </View>
+          )}
+          {trumpCard && (
+            <View style={styles.deckItem}>
+              <GameCard card={trumpCard} size="small" />
+              <Text style={styles.trumpLabel}>{t('table.trump')}</Text>
+              <Text style={styles.trumpSuit}>{getSuitName(trumpSuit!)}</Text>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -88,13 +88,13 @@ export default function GameTable({ gameState, humanPlayerId }: GameTableProps) 
 const styles = StyleSheet.create({
   table: {
     flex: 1,
+    flexDirection: 'row',
     borderRadius: 16,
     backgroundColor: Colors.tableFelt,
     borderWidth: 3,
     borderColor: Colors.goldDark,
-    position: 'relative',
-    overflow: 'hidden',
     minHeight: 200,
+    overflow: 'hidden',
   },
   trickArea: {
     flex: 1,
@@ -115,25 +115,15 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  deckArea: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
+  deckSidebar: {
+    width: 72,
+    paddingTop: 10,
+    paddingRight: 8,
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
   },
-  deckStack: {
-    flexDirection: 'row',
+  deckItem: {
     alignItems: 'center',
-  },
-  trumpCardContainer: {
-    transform: [{ rotate: '90deg' }],
-    marginRight: -20,
-    zIndex: 0,
-  },
-  deckTop: {
-    alignItems: 'center',
-    zIndex: 1,
   },
   deckCount: {
     color: Colors.white,
@@ -141,17 +131,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_600SemiBold',
     marginTop: 2,
   },
-  trumpIndicator: {
-    backgroundColor: Colors.whiteAlpha,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
   trumpLabel: {
     color: Colors.textSecondary,
     fontSize: 9,
     fontFamily: 'Inter_400Regular',
+    marginTop: 2,
   },
   trumpSuit: {
     color: Colors.gold,

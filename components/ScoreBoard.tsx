@@ -5,18 +5,21 @@ import Colors from '@/shared/constants/colors';
 import { Player } from '@/shared/lib/types';
 import { calculateScores, getWinner, isTeamGame, getTeamScores } from '@/shared/lib/brisca/engine';
 import { t } from '@/shared/i18n';
+import { useLanguage } from '@shared/hooks/useLanguage';
 
 interface ScoreBoardProps {
   players: Player[];
+  myId?: string;
   onPlayAgain: () => void;
   onExit: () => void;
 }
 
-export default function ScoreBoard({ players, onPlayAgain, onExit }: ScoreBoardProps) {
+export default function ScoreBoard({ players, myId, onPlayAgain, onExit }: ScoreBoardProps) {
+  useLanguage();
   const teamMode = isTeamGame(players);
 
   if (teamMode) {
-    return <TeamScoreBoard players={players} onPlayAgain={onPlayAgain} onExit={onExit} />;
+    return <TeamScoreBoard players={players} myId={myId} onPlayAgain={onPlayAgain} onExit={onExit} />;
   }
 
   const scores = calculateScores(players);
@@ -80,11 +83,13 @@ export default function ScoreBoard({ players, onPlayAgain, onExit }: ScoreBoardP
   );
 }
 
-function TeamScoreBoard({ players, onPlayAgain, onExit }: ScoreBoardProps) {
+function TeamScoreBoard({ players, myId, onPlayAgain, onExit }: ScoreBoardProps) {
+  useLanguage();
   const teamScores = getTeamScores(players);
   const isDraw = teamScores.length >= 2 && teamScores[0].score === teamScores[1].score;
   const winningTeam = isDraw ? null : teamScores[0];
-  const humanPlayer = players.find(p => !p.isAI);
+  // Use myId to find the viewer; fall back to first non-AI for offline games
+  const humanPlayer = myId ? players.find(p => p.id === myId) : players.find(p => !p.isAI);
   const humanTeam = humanPlayer?.team;
   const humanWon = winningTeam && humanTeam === winningTeam.team;
 
@@ -245,12 +250,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   buttons: {
-    flexDirection: 'row',
-    gap: 12,
+    flexDirection: 'column',
+    gap: 10,
     width: '100%',
   },
   button: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, Animated } from 'react-native';
+import { View, Text, StyleSheet, Platform, Pressable, Animated, Modal, useWindowDimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -25,6 +25,8 @@ import { GameState, Card, AIDifficulty } from '@/shared/lib/types';
 import { chooseAICard } from '@/shared/lib/brisca/ai';
 import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { useSettings } from '@/shared/hooks/useSettings';
+import { takeGameWs } from '@/shared/ws-store';
+import { useLanguage } from '@shared/hooks/useLanguage';
 
 const AI_NAMES = ['Carlos', 'Maria', 'Pedro'];
 const HUMAN_ID = 'human';
@@ -54,6 +56,7 @@ function DealAnimatedCard({ children, index, isNew }: { children: React.ReactNod
 }
 
 export default function GameScreen() {
+  useLanguage();
   const params = useLocalSearchParams<{
     mode: string;
     playerCount: string;
@@ -66,6 +69,8 @@ export default function GameScreen() {
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+  const { height: screenHeight } = useWindowDimensions();
+  const tableMaxHeight = Math.max(180, screenHeight * 0.47);
   const isOnline = params.mode === 'online';
   const numPlayers = parseInt(params.playerCount || '2', 10);
   const playerName = params.playerName || t('setup.defaultName');
@@ -78,12 +83,15 @@ export default function GameScreen() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [showAfkWarning, setShowAfkWarning] = useState(false);
+  const [afkSecondsLeft, setAfkSecondsLeft] = useState(30);
   const seenCardIdsRef = useRef<Set<string>>(new Set());
   const trickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const afkCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const myIdRef = useRef(myId);
   myIdRef.current = myId;
 
@@ -113,21 +121,22 @@ export default function GameScreen() {
     }
   }, []);
 
-  const connectOnlineWebSocket = useCallback((playerId: string, isReconnect = false) => {
+  const connectOnlineWebSocket = useCallback((playerId: string, existingWs?: WebSocket) => {
     try {
-      const baseUrl = getApiUrl();
-      const wsUrl = baseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-      const ws = new WebSocket(wsUrl);
+      const ws = existingWs ?? (() => {
+        const baseUrl = getApiUrl();
+        const wsUrl = baseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+        return new WebSocket(wsUrl);
+      })();
       wsRef.current = ws;
 
-      ws.onopen = () => {
-        if (isReconnect) {
+      if (!existingWs) {
+        // New connection — must re-register with server once open
+        ws.onopen = () => {
           setIsReconnecting(true);
           sendWsMessage({ type: 'reconnect', playerId });
-        } else {
-          sendWsMessage({ type: 'reconnect', playerId });
-        }
-      };
+        };
+      }
 
       ws.onmessage = (event) => {
         try {
@@ -139,6 +148,23 @@ export default function GameScreen() {
               setErrorMsg('');
               setIsReconnecting(false);
               reconnectAttemptsRef.current = 0;
+              if (afkCountdownRef.current) { clearInterval(afkCountdownRef.current); afkCountdownRef.current = null; }
+              setShowAfkWarning(false);
+              break;
+            case 'afk_warning':
+              setAfkSecondsLeft(data.secondsLeft);
+              setShowAfkWarning(true);
+              if (afkCountdownRef.current) clearInterval(afkCountdownRef.current);
+              afkCountdownRef.current = setInterval(() => {
+                setAfkSecondsLeft(prev => {
+                  if (prev <= 1) {
+                    if (afkCountdownRef.current) { clearInterval(afkCountdownRef.current); afkCountdownRef.current = null; }
+                    setShowAfkWarning(false);
+                    return 0;
+                  }
+                  return prev - 1;
+                });
+              }, 1000);
               break;
             case 'error':
               setErrorMsg(data.message);
@@ -172,7 +198,7 @@ export default function GameScreen() {
     setIsReconnecting(true);
     setErrorMsg(t('game.reconnecting'));
     reconnectTimerRef.current = setTimeout(() => {
-      connectOnlineWebSocket(playerId, true);
+      connectOnlineWebSocket(playerId);
     }, delay);
   }, [connectOnlineWebSocket]);
 
@@ -183,7 +209,8 @@ export default function GameScreen() {
         const pid = params.myPlayerId || '';
         setMyId(pid);
         setGameState(state);
-        connectOnlineWebSocket(pid);
+        const stored = takeGameWs();
+        connectOnlineWebSocket(pid, stored?.ws);
       } catch {
         router.replace('/');
       }
@@ -194,6 +221,7 @@ export default function GameScreen() {
       if (trickTimerRef.current) clearTimeout(trickTimerRef.current);
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (afkCountdownRef.current) clearInterval(afkCountdownRef.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.onerror = null;
@@ -264,10 +292,6 @@ export default function GameScreen() {
   const opponents = gameState.players.filter(p => p.id !== myId);
   const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.id === myId && gameState.phase === 'playing';
   const teamMode = humanPlayer.team !== undefined;
-  const myTeamScore = teamMode
-    ? gameState.players.filter(p => p.team === humanPlayer.team).reduce((s, p) => s + p.score, 0)
-    : humanPlayer.score;
-
   const getOpponentPosition = (index: number): 'top' | 'left' | 'right' => {
     if (opponents.length === 1) return 'top';
     if (opponents.length === 2) return index === 0 ? 'left' : 'right';
@@ -298,10 +322,6 @@ export default function GameScreen() {
         }} testID="game-back-btn">
           <MaterialCommunityIcons name="close" size={22} color={Colors.white} />
         </Pressable>
-        <View style={styles.scoreChip}>
-          <MaterialCommunityIcons name="star" size={14} color={Colors.gold} />
-          <Text style={styles.scoreChipText}>{myTeamScore}</Text>
-        </View>
         {isMyTurn && (
           <View style={styles.turnIndicator}>
             <Text style={styles.turnText}>{t('game.yourTurn')}</Text>
@@ -321,7 +341,7 @@ export default function GameScreen() {
         ))}
       </View>
 
-      <View style={styles.tableContainer}>
+      <View style={[styles.tableContainer, { maxHeight: tableMaxHeight }]}>
         <GameTable gameState={gameState} humanPlayerId={myId} />
       </View>
 
@@ -348,6 +368,7 @@ export default function GameScreen() {
       {gameState.phase === 'gameOver' && (
         <ScoreBoard
           players={gameState.players}
+          myId={isOnline ? myId : undefined}
           onPlayAgain={() => {
             if (isOnline) {
               if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
@@ -362,6 +383,23 @@ export default function GameScreen() {
           }}
         />
       )}
+
+      <Modal visible={showAfkWarning} transparent animationType="fade">
+        <View style={styles.afkOverlay}>
+          <View style={styles.afkCard}>
+            <MaterialCommunityIcons name="timer-outline" size={40} color={Colors.gold} />
+            <Text style={styles.afkTitle}>{t('game.afkWarningTitle')}</Text>
+            <Text style={styles.afkCountdown}>{afkSecondsLeft}s</Text>
+            <Text style={styles.afkMessage}>{t('game.afkWarningMessage')}</Text>
+            <Pressable
+              style={({ pressed }) => [styles.afkBtn, pressed && { opacity: 0.8 }]}
+              onPress={() => setShowAfkWarning(false)}
+            >
+              <Text style={styles.afkBtnText}>{t('game.afkWarningAction')}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -412,20 +450,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  scoreChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.whiteAlpha,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  scoreChipText: {
-    color: Colors.gold,
-    fontSize: 14,
-    fontFamily: 'Inter_700Bold',
-  },
   turnIndicator: {
     backgroundColor: 'rgba(212, 168, 67, 0.25)',
     paddingHorizontal: 10,
@@ -444,7 +468,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'flex-start',
     marginBottom: 8,
-    minHeight: 70,
+    minHeight: 80,
   },
   tableContainer: {
     flex: 1,
@@ -458,5 +482,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'center',
+  },
+  afkOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  afkCard: {
+    backgroundColor: Colors.background,
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+    width: '100%',
+    maxWidth: 340,
+  },
+  afkTitle: {
+    fontSize: 20,
+    fontFamily: 'Inter_700Bold',
+    color: Colors.white,
+    marginTop: 4,
+  },
+  afkCountdown: {
+    fontSize: 48,
+    fontFamily: 'Inter_700Bold',
+    color: Colors.gold,
+  },
+  afkMessage: {
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  afkBtn: {
+    backgroundColor: Colors.gold,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    marginTop: 8,
+  },
+  afkBtnText: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.textDark,
   },
 });

@@ -36,19 +36,13 @@ export default function OpponentHand({ player, isCurrentTurn, position, isTeamma
         ]} numberOfLines={1}>
           {player.name}
         </Text>
-        <Text style={styles.score}>{player.score}</Text>
       </View>
       <View style={[
         styles.cards,
         isHorizontal ? styles.cardsHorizontal : styles.cardsVertical,
       ]}>
         {player.hand.map((_, i) => (
-          <View
-            key={i}
-            style={[
-              isHorizontal ? { marginLeft: i > 0 ? -12 : 0 } : { marginTop: i > 0 ? -20 : 0 },
-            ]}
-          >
+          <View key={i} style={!isHorizontal && i > 0 ? styles.fanCard : undefined}>
             <CardSprite faceDown size="small" />
           </View>
         ))}
@@ -96,18 +90,15 @@ const styles = StyleSheet.create({
   activeName: {
     color: Colors.gold,
   },
-  score: {
-    color: Colors.gold,
-    fontSize: 11,
-    fontFamily: 'Inter_700Bold',
-  },
-  cards: {
-    flexDirection: 'row',
-  },
+  cards: {},
   cardsHorizontal: {
     flexDirection: 'row',
+    gap: 4,
   },
   cardsVertical: {
     flexDirection: 'column',
+  },
+  fanCard: {
+    marginTop: -68,
   },
 });

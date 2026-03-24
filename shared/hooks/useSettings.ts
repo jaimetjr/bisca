@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AIDifficulty } from '../lib/types';
-import { setLanguage } from '../i18n';
 
 const SETTINGS_KEY = '@bisca:settings';
 
@@ -26,9 +25,7 @@ export function useSettings() {
       if (raw) {
         try {
           const parsed = JSON.parse(raw) as Partial<AppSettings>;
-          const merged = { ...DEFAULT_SETTINGS, ...parsed };
-          setSettingsState(merged);
-          setLanguage(merged.language);
+          setSettingsState({ ...DEFAULT_SETTINGS, ...parsed });
         } catch {}
       }
       setLoaded(true);
@@ -38,7 +35,6 @@ export function useSettings() {
   const updateSettings = useCallback(async (patch: Partial<AppSettings>) => {
     setSettingsState((prev) => {
       const next = { ...prev, ...patch };
-      if (patch.language) setLanguage(patch.language);
       AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
       return next;
     });

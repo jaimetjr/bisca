@@ -2,7 +2,7 @@ import './types';
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from 'node:http';
 import { WebSocketServer } from 'ws';
-import { handleWebSocket } from './game-rooms';
+import { handleWebSocket, getPublicRooms } from './game-rooms';
 import { db } from './db';
 import { gameHistory, userProfiles } from '../shared/lib/schema';
 import { eq, desc, sql } from 'drizzle-orm';
@@ -29,6 +29,10 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 export async function registerRoutes(app: Express): Promise<Server> {
     app.get("/api/health", (_req, res) => {
         res.json({ status: "ok" });
+    });
+
+    app.get("/api/rooms", (_req, res) => {
+        res.json(getPublicRooms());
     });
 
     app.get("/api/stats", requireAuth, async (req: Request, res: Response) => {

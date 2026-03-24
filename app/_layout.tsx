@@ -5,8 +5,11 @@ import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
 import { View } from 'react-native';
+import { QueryClientProvider } from '@tanstack/react-query';
 import Colors from '@/shared/constants/colors';
 import { GuestModeProvider, useGuestMode } from '@shared/hooks/useGuestMode';
+import { LanguageProvider } from '@shared/hooks/useLanguage';
+import { queryClient } from '@/shared/query-client';
 
 const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '';
 
@@ -57,6 +60,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AppNavigator() {
+  return <Stack screenOptions={{ headerShown: false }} />;
+}
+
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -70,12 +77,16 @@ export default function RootLayout() {
   }
 
   return (
-    <GuestModeProvider>
-      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
-        <AuthGuard>
-          <Stack screenOptions={{ headerShown: false }} />
-        </AuthGuard>
-      </ClerkProvider>
-    </GuestModeProvider>
+    <LanguageProvider>
+      <QueryClientProvider client={queryClient}>
+        <GuestModeProvider>
+          <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+            <AuthGuard>
+              <AppNavigator />
+            </AuthGuard>
+          </ClerkProvider>
+        </GuestModeProvider>
+      </QueryClientProvider>
+    </LanguageProvider>
   );
 }

@@ -7,12 +7,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Colors from "@/shared/constants/colors";
 import { t } from '@/shared/i18n';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
+import { useLanguage } from '@shared/hooks/useLanguage';
 
 export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const topPadding = Platform.OS === 'web' ? 67 : insets.top;
     const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
     const { isGuest, disableGuestMode } = useGuestMode();
+    useLanguage(); // subscribe to language changes so t() output updates
 
     const handleCreateAccount = async () => {
         await disableGuestMode();

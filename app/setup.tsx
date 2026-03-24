@@ -7,8 +7,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
 import { t } from '@/shared/i18n';
 import { PLAYER_NAME_MAX_LENGTH } from '@/shared/constants/game';
-import type { AIDifficulty } from '@/shared/lib/types';
 import { useSettings } from '@/shared/hooks/useSettings';
+import { useUser } from '@clerk/clerk-expo';
+import { useGuestMode } from '@shared/hooks/useGuestMode';
+import { useLanguage } from '@shared/hooks/useLanguage';
+
+type OnlineMode = 'create' | 'browse' | 'join';
+
+const TAB_ICONS: Record<OnlineMode, { default: string; active: string }> = {
+  create: { default: 'plus-circle-outline', active: 'plus-circle' },
+  browse: { default: 'cards-outline', active: 'cards' },
+  join:   { default: 'account-arrow-right-outline', active: 'account-arrow-right' },
+};
 
 export default function SetupScreen() {
   const { mode } = useLocalSearchParams<{ mode: string }>();
@@ -17,32 +27,48 @@ export default function SetupScreen() {
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
   const isOnline = mode === 'online';
 
+  const { user } = useUser();
+  const { isGuest } = useGuestMode();
+  useLanguage();
+  const isLoggedIn = !!user && !isGuest;
+
   const { settings } = useSettings();
   const [playerCount, setPlayerCount] = useState(2);
   const [playerName, setPlayerName] = useState('');
   const [roomCode, setRoomCode] = useState('');
-  const [isCreating, setIsCreating] = useState(true);
-  const [difficulty, setDifficulty] = useState<AIDifficulty>(settings.aiDifficulty);
+  const [onlineMode, setOnlineMode] = useState<OnlineMode>('create');
+  const [isPublic, setIsPublic] = useState(true);
+
+  const resolvedName = isLoggedIn
+    ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || t('setup.defaultName')
+    : playerName.trim() || t('setup.defaultName');
 
   const handleStart = () => {
-    const name = playerName.trim() || t('setup.defaultName');
     if (isOnline) {
-      if (isCreating) {
+      if (onlineMode === 'create') {
         router.push({
           pathname: '/online-lobby',
-          params: { action: 'create', playerCount: String(playerCount), playerName: name },
+          params: { action: 'create', playerCount: String(playerCount), playerName: resolvedName, isPublic: isPublic ? '1' : '0' },
         });
       } else {
         router.push({
           pathname: '/online-lobby',
-          params: { action: 'join', roomCode, playerName: name },
+          params: { action: 'join', roomCode, playerName: resolvedName },
         });
       }
     } else {
       router.push({
         pathname: '/game',
-        params: { mode: 'ai', playerCount: String(playerCount), playerName: name, difficulty },
+        params: { mode: 'ai', playerCount: String(playerCount), playerName: resolvedName, difficulty: settings.aiDifficulty },
       });
+    }
+  };
+
+  const handleTabPress = (m: OnlineMode) => {
+    if (m === 'browse') {
+      router.push({ pathname: '/lobby-browser', params: { playerName: resolvedName } });
+    } else {
+      setOnlineMode(m);
     }
   };
 
@@ -62,87 +88,144 @@ export default function SetupScreen() {
         {isOnline ? t('setup.onlineSubtitle') : t('setup.aiSubtitle')}
       </Text>
 
-      <View style={styles.section}>
-        <Text style={styles.label}>{t('setup.yourName')}</Text>
-        <TextInput
-          style={styles.input}
-          value={playerName}
-          onChangeText={setPlayerName}
-          placeholder={t('setup.enterName')}
-          placeholderTextColor={Colors.textSecondary}
-          maxLength={PLAYER_NAME_MAX_LENGTH}
-          testID="name-input"
-        />
-      </View>
-
-      {isOnline && (
-        <View style={styles.toggleContainer}>
-          <Pressable
-            style={[styles.toggleButton, isCreating && styles.toggleActive]}
-            onPress={() => setIsCreating(true)}
-          >
-            <Text style={[styles.toggleText, isCreating && styles.toggleTextActive]}>{t('setup.createRoom')}</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.toggleButton, !isCreating && styles.toggleActive]}
-            onPress={() => setIsCreating(false)}
-          >
-            <Text style={[styles.toggleText, !isCreating && styles.toggleTextActive]}>{t('setup.joinRoom')}</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {isOnline && !isCreating ? (
+      {isLoggedIn ? (
         <View style={styles.section}>
-          <Text style={styles.label}>{t('setup.roomCode')}</Text>
-          <TextInput
-            style={styles.input}
-            value={roomCode}
-            onChangeText={(txt) => setRoomCode(txt.toUpperCase())}
-            placeholder={t('setup.enterRoomCode')}
-            placeholderTextColor={Colors.textSecondary}
-            maxLength={6}
-            autoCapitalize="characters"
-            testID="room-code-input"
-          />
+          <Text style={styles.label}>{t('setup.yourName')}</Text>
+          <View style={styles.nameDisplay}>
+            <MaterialCommunityIcons name="account-circle" size={20} color={Colors.gold} />
+            <Text style={styles.nameDisplayText}>
+              {`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()}
+            </Text>
+          </View>
         </View>
       ) : (
         <View style={styles.section}>
-          <Text style={styles.label}>{t('setup.gameMode')}</Text>
-          <View style={styles.playerCountRow}>
-            {([{ count: 2, label: '1v1' }, { count: 4, label: '2v2' }] as const).map(({ count, label }) => (
-              <Pressable
-                key={count}
-                style={[styles.countButton, playerCount === count && styles.countButtonActive]}
-                onPress={() => setPlayerCount(count)}
-                testID={`count-${count}-btn`}
-              >
-                <Text style={[styles.countText, playerCount === count && styles.countTextActive]}>
-                  {label}
-                </Text>
-                <Text style={[styles.countLabel, playerCount === count && styles.countLabelActive]}>
-                  {isOnline ? t('setup.players', { count }) : count === 2 ? t('setup.youVsAI') : t('setup.youAIvsAI')}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <Text style={styles.label}>{t('setup.yourName')}</Text>
+          <TextInput
+            style={styles.input}
+            value={playerName}
+            onChangeText={setPlayerName}
+            placeholder={t('setup.enterName')}
+            placeholderTextColor={Colors.textSecondary}
+            maxLength={PLAYER_NAME_MAX_LENGTH}
+            testID="name-input"
+          />
         </View>
+      )}
+
+      {isOnline && (
+        <>
+          {/* Tab row */}
+          <View style={styles.tabContainer}>
+            {(['create', 'browse', 'join'] as OnlineMode[]).map((m) => {
+              const isActive = onlineMode === m;
+              const icons = TAB_ICONS[m];
+              return (
+                <Pressable
+                  key={m}
+                  style={[styles.tabButton, isActive && styles.tabActive]}
+                  onPress={() => handleTabPress(m)}
+                >
+                  <MaterialCommunityIcons
+                    name={(isActive ? icons.active : icons.default) as any}
+                    size={15}
+                    color={isActive ? Colors.textDark : Colors.textSecondary}
+                  />
+                  <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                    {m === 'create' ? t('setup.createRoom') : m === 'browse' ? t('setup.browseRooms') : t('setup.joinRoom')}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Content panel */}
+          <View style={styles.onlinePanelCard}>
+            {onlineMode === 'create' && (
+              <>
+                <View>
+                  <Text style={styles.label}>{t('setup.gameMode')}</Text>
+                  <View style={styles.playerCountRow}>
+                    {([{ count: 2, label: '1v1' }, { count: 4, label: '2v2' }] as const).map(({ count, label }) => (
+                      <Pressable
+                        key={count}
+                        style={[styles.countButton, playerCount === count && styles.countButtonActive]}
+                        onPress={() => setPlayerCount(count)}
+                        testID={`count-${count}-btn`}
+                      >
+                        <Text style={[styles.countText, playerCount === count && styles.countTextActive]}>
+                          {label}
+                        </Text>
+                        <Text style={[styles.countLabel, playerCount === count && styles.countLabelActive]}>
+                          {t('setup.players', { count })}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                <View>
+                  <Text style={styles.label}>{t('setup.visibility')}</Text>
+                  <View style={styles.toggleContainer}>
+                    <Pressable
+                      style={[styles.toggleButton, isPublic && styles.toggleActive]}
+                      onPress={() => setIsPublic(true)}
+                    >
+                      <MaterialCommunityIcons name="earth" size={14} color={isPublic ? Colors.textDark : Colors.textSecondary} />
+                      <Text style={[styles.toggleText, isPublic && styles.toggleTextActive]}>{t('setup.public')}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.toggleButton, !isPublic && styles.toggleActive]}
+                      onPress={() => setIsPublic(false)}
+                    >
+                      <MaterialCommunityIcons name="lock" size={14} color={!isPublic ? Colors.textDark : Colors.textSecondary} />
+                      <Text style={[styles.toggleText, !isPublic && styles.toggleTextActive]}>{t('setup.private')}</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.hintText}>{t(isPublic ? 'setup.publicHint' : 'setup.privateHint')}</Text>
+                </View>
+              </>
+            )}
+
+            {onlineMode === 'join' && (
+              <View>
+                <Text style={styles.label}>{t('setup.roomCode')}</Text>
+                <TextInput
+                  style={styles.roomCodeInput}
+                  value={roomCode}
+                  onChangeText={(txt) => setRoomCode(txt.toUpperCase())}
+                  placeholder={t('setup.enterRoomCode')}
+                  placeholderTextColor={Colors.textSecondary}
+                  maxLength={6}
+                  autoCapitalize="characters"
+                  testID="room-code-input"
+                />
+                <View style={styles.roomCodeMeta}>
+                  <Text style={styles.roomCodeCount}>{roomCode.length}/5</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </>
       )}
 
       {!isOnline && (
         <>
           <View style={styles.section}>
-            <Text style={styles.label}>{t('setup.difficulty')}</Text>
-            <View style={styles.toggleContainer}>
-              {(['easy', 'medium', 'hard'] as AIDifficulty[]).map((d) => (
+            <Text style={styles.label}>{t('setup.gameMode')}</Text>
+            <View style={styles.playerCountRow}>
+              {([{ count: 2, label: '1v1' }, { count: 4, label: '2v2' }] as const).map(({ count, label }) => (
                 <Pressable
-                  key={d}
-                  style={[styles.toggleButton, difficulty === d && styles.toggleActive]}
-                  onPress={() => setDifficulty(d)}
-                  testID={`difficulty-${d}-btn`}
+                  key={count}
+                  style={[styles.countButton, playerCount === count && styles.countButtonActive]}
+                  onPress={() => setPlayerCount(count)}
+                  testID={`count-${count}-btn`}
                 >
-                  <Text style={[styles.toggleText, difficulty === d && styles.toggleTextActive]}>
-                    {t(`setup.difficulty.${d}`)}
+                  <Text style={[styles.countText, playerCount === count && styles.countTextActive]}>
+                    {label}
+                  </Text>
+                  <Text style={[styles.countLabel, playerCount === count && styles.countLabelActive]}>
+                    {count === 2 ? t('setup.youVsAI') : t('setup.youAIvsAI')}
                   </Text>
                 </Pressable>
               ))}
@@ -162,19 +245,25 @@ export default function SetupScreen() {
         style={({ pressed }) => [
           styles.startButton,
           pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-          (isOnline && !isCreating && roomCode.length < 4) && styles.startButtonDisabled,
+          (isOnline && onlineMode === 'join' && roomCode.length < 4) && styles.startButtonDisabled,
         ]}
         onPress={handleStart}
-        disabled={isOnline && !isCreating && roomCode.length < 4}
+        disabled={isOnline && onlineMode === 'join' && roomCode.length < 4}
         testID="start-btn"
       >
         <MaterialCommunityIcons
-          name={isOnline ? 'play-circle' : 'sword-cross'}
+          name={
+            !isOnline ? 'sword-cross'
+            : onlineMode === 'create' ? 'plus-circle'
+            : 'account-arrow-right'
+          }
           size={22}
           color={Colors.textDark}
         />
         <Text style={styles.startButtonText}>
-          {isOnline ? (isCreating ? t('setup.createRoom') : t('setup.joinRoom')) : t('setup.startGame')}
+          {!isOnline ? t('setup.startGame')
+            : onlineMode === 'create' ? t('setup.createRoom')
+            : t('setup.joinRoom')}
         </Text>
       </Pressable>
     </View>
@@ -229,18 +318,95 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.whiteAlpha,
   },
+  nameDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.whiteAlpha,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+  },
+  nameDisplayText: {
+    fontSize: 16,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.white,
+  },
+  // Tab row
+  tabContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    gap: 5,
+    backgroundColor: Colors.whiteAlpha2,
+  },
+  tabActive: {
+    backgroundColor: Colors.gold,
+  },
+  tabText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+    color: Colors.textSecondary,
+  },
+  tabTextActive: {
+    color: Colors.textDark,
+  },
+  // Content panel
+  onlinePanelCard: {
+    backgroundColor: Colors.whiteAlpha2,
+    borderRadius: 16,
+    padding: 20,
+    gap: 20,
+    marginBottom: 16,
+  },
+  roomCodeInput: {
+    backgroundColor: Colors.whiteAlpha,
+    borderRadius: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    color: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.whiteAlpha,
+    letterSpacing: 8,
+    textAlign: 'center',
+  },
+  roomCodeMeta: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 6,
+  },
+  roomCodeCount: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textSecondary,
+  },
+  // Visibility toggle (inside panel)
   toggleContainer: {
     flexDirection: 'row',
-    backgroundColor: Colors.whiteAlpha2,
-    borderRadius: 12,
+    backgroundColor: Colors.whiteAlpha,
+    borderRadius: 10,
     padding: 4,
-    marginBottom: 24,
   },
   toggleButton: {
     flex: 1,
-    paddingVertical: 10,
+    flexDirection: 'row',
+    paddingVertical: 9,
     alignItems: 'center',
-    borderRadius: 10,
+    justifyContent: 'center',
+    borderRadius: 8,
+    gap: 6,
   },
   toggleActive: {
     backgroundColor: Colors.gold,
@@ -318,6 +484,12 @@ const styles = StyleSheet.create({
   },
   startButtonDisabled: {
     opacity: 0.5,
+  },
+  hintText: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.textSecondary,
+    marginTop: 6,
   },
   startButtonText: {
     fontSize: 17,

@@ -1,0 +1,68 @@
+# Artillery load test — WebSocket scenarios
+# Run: npm run test:load
+# Requires server running at TARGET (set WS_URL env var or edit target below)
+#
+# Install artillery if not present: npm install -g artillery
+
+config:
+  target: "ws://localhost:5000"
+  phases:
+    - name: "Warm up"
+      duration: 10
+      arrivalRate: 5
+    - name: "Ramp up"
+      duration: 20
+      arrivalRate: 10
+      rampTo: 50
+    - name: "Sustain"
+      duration: 30
+      arrivalRate: 50
+    - name: "Spike"
+      duration: 10
+      arrivalRate: 200
+  engines:
+    ws: {}
+  defaults:
+    headers:
+      content-type: "application/json"
+
+scenarios:
+  # ── Scenario A: Room creation ──────────────────────────────────────────────
+  - name: "Concurrent room creation"
+    weight: 50
+    engine: ws
+    flow:
+      - send: '{"type":"create_room","playerName":"LoadUser","maxPlayers":2,"isPublic":false}'
+      - think: 0.5
+      - close: {}
+
+  # ── Scenario B: Lobby fill (2 players join, host starts) ──────────────────
+  - name: "Lobby fill and game start"
+    weight: 30
+    engine: ws
+    flow:
+      # Host creates room
+      - send: '{"type":"create_room","playerName":"LoadHost","maxPlayers":2,"isPublic":true}'
+      - think: 1
+      # Note: in a real load test, a second virtual user would join.
+      # Artillery's WS engine is single-connection per VU, so we simulate
+      # the host waiting for a join by thinking, then starting.
+      - think: 2
+      - send: '{"type":"start_game"}'
+      - think: 1
+      - close: {}
+
+  # ── Scenario C: Rapid card plays (existing game session) ──────────────────
+  - name: "Card play stress"
+    weight: 20
+    engine: ws
+    flow:
+      - send: '{"type":"create_room","playerName":"StressHost","maxPlayers":2,"isPublic":false}'
+      - think: 0.2
+      # Play several cards rapidly (most will be rejected as NOT_YOUR_TURN
+      # without a second player, but tests server error-path throughput)
+      - loop:
+          - send: '{"type":"play_card","cardId":"oros-1"}'
+          - think: 0.1
+        count: 5
+      - close: {}

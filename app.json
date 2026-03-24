@@ -18,6 +18,7 @@
     },
     "android": {
       "package": "com.brisca",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#1a472a",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

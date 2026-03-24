@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
 import { t, SUPPORTED_LANGUAGE_CODES } from '@/shared/i18n';
 import { useSettings, AppSettings } from '@/shared/hooks/useSettings';
+import { useLanguage } from '@shared/hooks/useLanguage';
 import type { AIDifficulty } from '@/shared/lib/types';
 import { useAuth } from '@clerk/clerk-expo';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
@@ -26,6 +27,7 @@ export default function SettingsScreen() {
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
   const { settings, updateSettings } = useSettings();
+  const { changeLanguage } = useLanguage();
   const { signOut } = useAuth();
   const { isGuest, disableGuestMode } = useGuestMode();
   const [signingOut, setSigningOut] = useState(false);
@@ -120,7 +122,7 @@ export default function SettingsScreen() {
               <Pressable
                 key={code}
                 style={[styles.languageChip, settings.language === code && styles.languageChipActive]}
-                onPress={() => updateSettings({ language: code })}
+                onPress={() => { updateSettings({ language: code }); changeLanguage(code); }}
               >
                 <Text style={[styles.languageChipText, settings.language === code && styles.languageChipTextActive]}>
                   {LANGUAGE_LABELS[code] ?? code.toUpperCase()}
@@ -131,7 +133,19 @@ export default function SettingsScreen() {
         </View>
 
         {/* Account */}
-        <Text style={styles.sectionHeader}>Account</Text>
+        <Text style={styles.sectionHeader}>{t('settings.account')}</Text>
+
+        {!isGuest && (
+          <Pressable
+            style={({ pressed }) => [styles.accountBtn, pressed && { opacity: 0.75 }]}
+            onPress={() => router.push('/profile')}
+          >
+            <MaterialCommunityIcons name="account-edit-outline" size={18} color={Colors.white} />
+            <Text style={styles.accountBtnText}>{t('settings.editProfile')}</Text>
+            <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
+          </Pressable>
+        )}
+
         <Pressable
           style={({ pressed }) => [styles.signOutBtn, pressed && { opacity: 0.75 }, signingOut && { opacity: 0.5 }]}
           onPress={handleSignOut}
@@ -139,7 +153,7 @@ export default function SettingsScreen() {
         >
           <MaterialCommunityIcons name="logout" size={18} color={Colors.danger} />
           <Text style={styles.signOutText}>
-            {isGuest ? 'Leave Guest Mode' : 'Sign Out'}
+            {isGuest ? t('settings.leaveGuestMode') : t('settings.signOut')}
           </Text>
         </Pressable>
       </ScrollView>
@@ -196,6 +210,16 @@ const styles = StyleSheet.create({
   languageChipActive: { borderColor: Colors.gold, backgroundColor: 'rgba(212, 168, 67, 0.15)' },
   languageChipText: { fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.textSecondary },
   languageChipTextActive: { color: Colors.gold },
+  accountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.whiteAlpha,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 8,
+  },
+  accountBtnText: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.white },
   signOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',

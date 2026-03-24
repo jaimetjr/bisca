@@ -41,24 +41,38 @@ export default function CompleteProfileScreen() {
         // Network error — show form anyway so user can try
       }
 
-      // Pre-fill name from Clerk (populated from Google OAuth)
-      if (user?.firstName) setFirstName(user.firstName);
-      if (user?.lastName) setLastName(user.lastName);
-
-      // If coming from email registration, pick up pending profile data
+      // If coming from email registration, all data is ready — auto-submit without showing the form
       try {
         const raw = await AsyncStorage.getItem('pending_profile');
         if (raw) {
           const pending = JSON.parse(raw);
-          if (pending.firstName) setFirstName(pending.firstName);
-          if (pending.lastName) setLastName(pending.lastName);
-          // Convert YYYY-MM-DD back to DD/MM/YYYY for the input
-          if (pending.dateOfBirth) {
+          if (pending.firstName && pending.lastName && pending.dateOfBirth) {
+            const token = await getToken();
+            const res = await fetch(`${getApiUrl()}api/users/profile`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify(pending),
+            });
+            if (res.ok) {
+              await AsyncStorage.removeItem('pending_profile');
+              router.replace('/');
+              return;
+            }
+            // Submission failed — fall through to show the form pre-filled
             const [y, m, d] = pending.dateOfBirth.split('-');
+            if (pending.firstName) setFirstName(pending.firstName);
+            if (pending.lastName) setLastName(pending.lastName);
             setDateOfBirth(`${d}/${m}/${y}`);
+            setErrorMsg('Failed to save profile — please try again');
+            setLoading(false);
+            return;
           }
         }
       } catch {}
+
+      // Google OAuth — pre-fill name from Clerk, ask for missing DOB
+      if (user?.firstName) setFirstName(user.firstName);
+      if (user?.lastName) setLastName(user.lastName);
 
       setLoading(false);
     })();

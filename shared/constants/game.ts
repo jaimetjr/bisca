@@ -6,6 +6,8 @@ export const DEAL_ANIMATION_DURATION_MS = 350;
 export const DEAL_ANIMATION_STAGGER_MS = 120;
 export const CONNECTION_TIMEOUT_MS = 10_000;
 export const ROOM_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
+export const AFK_TIMEOUT_MS = 120_000;         // 2 minutes — configurable
+export const AFK_WARNING_MS = 30_000;          // warning sent this many ms before kick
 export const ROOM_CLEANUP_AFTER_GAME_MS = 5 * 60 * 1000; // 5 minutes
 
 // Game rules
