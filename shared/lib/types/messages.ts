@@ -16,7 +16,8 @@ export type ClientMessage =
   | { type: 'switch_team'; team: 0 | 1 }
   | { type: 'start_game' }
   | { type: 'play_card'; cardId: string }
-  | { type: 'reconnect'; playerId: string };
+  | { type: 'reconnect'; playerId: string }
+  | { type: 'leave_game' };
 
 // ─── Server → Client ────────────────────────────────────────────────────────
 

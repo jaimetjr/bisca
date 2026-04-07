@@ -12,19 +12,22 @@ interface ScoreBoardProps {
   myId?: string;
   onPlayAgain: () => void;
   onExit: () => void;
+  endReason?: 'normal' | 'forfeit';
+  forfeitedBy?: string;
 }
 
-export default function ScoreBoard({ players, myId, onPlayAgain, onExit }: ScoreBoardProps) {
+export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeitedBy }: ScoreBoardProps) {
   useLanguage();
   const teamMode = isTeamGame(players);
 
   if (teamMode) {
-    return <TeamScoreBoard players={players} myId={myId} onPlayAgain={onPlayAgain} onExit={onExit} />;
+    return <TeamScoreBoard players={players} myId={myId} onPlayAgain={onPlayAgain} onExit={onExit} endReason={endReason} forfeitedBy={forfeitedBy} />;
   }
 
   const scores = calculateScores(players);
   const winner = getWinner(players);
   const isDraw = !winner && scores.length > 0 && scores[0].score === 60;
+  const isForfeit = endReason === 'forfeit';
 
   return (
     <View style={styles.container}>
@@ -38,6 +41,9 @@ export default function ScoreBoard({ players, myId, onPlayAgain, onExit }: Score
         <Text style={styles.title}>
           {isDraw ? t('score.draw') : t('score.playerWins', { name: winner?.name || '' })}
         </Text>
+        {isForfeit && forfeitedBy ? (
+          <Text style={styles.forfeitNote}>{t('score.forfeit', { name: forfeitedBy })}</Text>
+        ) : null}
 
         <View style={styles.scoreList}>
           {scores.map((s, i) => (
@@ -83,7 +89,7 @@ export default function ScoreBoard({ players, myId, onPlayAgain, onExit }: Score
   );
 }
 
-function TeamScoreBoard({ players, myId, onPlayAgain, onExit }: ScoreBoardProps) {
+function TeamScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeitedBy }: ScoreBoardProps) {
   useLanguage();
   const teamScores = getTeamScores(players);
   const isDraw = teamScores.length >= 2 && teamScores[0].score === teamScores[1].score;
@@ -92,6 +98,7 @@ function TeamScoreBoard({ players, myId, onPlayAgain, onExit }: ScoreBoardProps)
   const humanPlayer = myId ? players.find(p => p.id === myId) : players.find(p => !p.isAI);
   const humanTeam = humanPlayer?.team;
   const humanWon = winningTeam && humanTeam === winningTeam.team;
+  const isForfeit = endReason === 'forfeit';
 
   return (
     <View style={styles.container}>
@@ -105,6 +112,9 @@ function TeamScoreBoard({ players, myId, onPlayAgain, onExit }: ScoreBoardProps)
         <Text style={styles.title}>
           {isDraw ? t('score.draw') : humanWon ? t('score.teamWins') : t('score.youLose')}
         </Text>
+        {isForfeit && forfeitedBy ? (
+          <Text style={styles.forfeitNote}>{t('score.forfeit', { name: forfeitedBy })}</Text>
+        ) : null}
 
         <View style={styles.scoreList}>
           {teamScores.map((ts, i) => {
@@ -248,6 +258,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Inter_400Regular',
     marginBottom: 20,
+  },
+  forfeitNote: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    marginBottom: 12,
+    marginTop: -10,
   },
   buttons: {
     flexDirection: 'column',

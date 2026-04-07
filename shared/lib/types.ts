@@ -35,6 +35,8 @@ export interface GameState {
   phase: 'waiting' | 'playing' | 'trickComplete' | 'gameOver';
   trickWinnerId: string | null;
   lastTrick: TrickCard[] | null;
+  endReason?: 'normal' | 'forfeit';
+  forfeitedBy?: string; // name of the player who forfeited
 }
 
 export interface OnlineRoom {

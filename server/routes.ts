@@ -21,7 +21,8 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
     const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
     req.clerkUserId = payload.sub;
     next();
-  } catch {
+  } catch (err) {
+    console.error('Token verification failed:', err);
     res.status(401).json({ error: 'Invalid token' });
   }
 }
@@ -88,7 +89,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             },
           });
         res.json({ ok: true });
-      } catch {
+      } catch (err) {
+        console.error('Failed to save profile:', err);
         res.status(500).json({ error: 'Failed to save profile' });
       }
     });

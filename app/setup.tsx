@@ -8,9 +8,11 @@ import Colors from '@/shared/constants/colors';
 import { t } from '@/shared/i18n';
 import { PLAYER_NAME_MAX_LENGTH } from '@/shared/constants/game';
 import { useSettings } from '@/shared/hooks/useSettings';
-import { useUser } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/clerk-expo';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useLanguage } from '@shared/hooks/useLanguage';
+import { useQuery } from '@tanstack/react-query';
+import { getApiUrl } from '@/shared/query-client';
 
 type OnlineMode = 'create' | 'browse' | 'join';
 
@@ -27,10 +29,10 @@ export default function SetupScreen() {
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
   const isOnline = mode === 'online';
 
-  const { user } = useUser();
+  const { getToken, isSignedIn } = useAuth();
   const { isGuest } = useGuestMode();
   useLanguage();
-  const isLoggedIn = !!user && !isGuest;
+  const isLoggedIn = !!isSignedIn && !isGuest;
 
   const { settings } = useSettings();
   const [playerCount, setPlayerCount] = useState(2);
@@ -39,8 +41,21 @@ export default function SetupScreen() {
   const [onlineMode, setOnlineMode] = useState<OnlineMode>('create');
   const [isPublic, setIsPublic] = useState(true);
 
+  const { data: profile } = useQuery<{ firstName: string; lastName: string }>({
+    queryKey: ['profile'],
+    enabled: isLoggedIn,
+    queryFn: async () => {
+      const token = await getToken();
+      const res = await fetch(`${getApiUrl()}api/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to load profile');
+      return res.json();
+    },
+  });
+
   const resolvedName = isLoggedIn
-    ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || t('setup.defaultName')
+    ? `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim() || t('setup.defaultName')
     : playerName.trim() || t('setup.defaultName');
 
   const handleStart = () => {
@@ -94,7 +109,7 @@ export default function SetupScreen() {
           <View style={styles.nameDisplay}>
             <MaterialCommunityIcons name="account-circle" size={20} color={Colors.gold} />
             <Text style={styles.nameDisplayText}>
-              {`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()}
+              {resolvedName}
             </Text>
           </View>
         </View>

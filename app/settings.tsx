@@ -11,6 +11,7 @@ import { useLanguage } from '@shared/hooks/useLanguage';
 import type { AIDifficulty } from '@/shared/lib/types';
 import { useAuth } from '@clerk/clerk-expo';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
+import { useEntitlement } from '@shared/hooks/useEntitlement';
 
 const DIFFICULTY_OPTIONS: AIDifficulty[] = ['easy', 'medium', 'hard'];
 const SPEED_OPTIONS: AppSettings['gameSpeed'][] = ['slow', 'normal', 'fast'];
@@ -30,7 +31,24 @@ export default function SettingsScreen() {
   const { changeLanguage } = useLanguage();
   const { signOut } = useAuth();
   const { isGuest, disableGuestMode } = useGuestMode();
+  const { isPremium, purchase, restore } = useEntitlement();
   const [signingOut, setSigningOut] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  const handlePurchase = async () => {
+    setPurchasing(true);
+    const ok = await purchase();
+    setPurchasing(false);
+    if (!ok) Alert.alert('', t('settings.purchaseError'));
+  };
+
+  const handleRestore = async () => {
+    setRestoring(true);
+    const ok = await restore();
+    setRestoring(false);
+    if (!ok) Alert.alert('', t('settings.restoreNone'));
+  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -131,6 +149,50 @@ export default function SettingsScreen() {
             ))}
           </View>
         </View>
+
+        {/* Premium */}
+        <Text style={styles.sectionHeader}>{t('settings.premium')}</Text>
+
+        {isPremium ? (
+          <View style={styles.card}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <MaterialCommunityIcons name="check-circle" size={20} color={Colors.gold} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardLabel}>{t('settings.premiumActive')}</Text>
+                <Text style={[styles.segmentText, { marginTop: 2 }]}>{t('settings.premiumActiveDesc')}</Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <>
+            <Pressable
+              style={({ pressed }) => [styles.accountBtn, pressed && { opacity: 0.75 }, purchasing && { opacity: 0.5 }]}
+              onPress={handlePurchase}
+              disabled={purchasing || restoring}
+            >
+              <MaterialCommunityIcons name="tag-remove-outline" size={18} color={Colors.gold} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.accountBtnText, { color: Colors.gold }]}>
+                  {purchasing ? t('settings.purchasing') : t('settings.removeAds')}
+                </Text>
+                <Text style={[styles.segmentText, { marginTop: 2 }]}>{t('settings.removeAdsDesc')}</Text>
+              </View>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textSecondary} />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.accountBtn, pressed && { opacity: 0.75 }, restoring && { opacity: 0.5 }]}
+              onPress={handleRestore}
+              disabled={purchasing || restoring}
+            >
+              <MaterialCommunityIcons name="restore" size={18} color={Colors.white} />
+              <Text style={styles.accountBtnText}>
+                {restoring ? t('settings.restoring') : t('settings.restorePurchase')}
+              </Text>
+              <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
+            </Pressable>
+          </>
+        )}
 
         {/* Account */}
         <Text style={styles.sectionHeader}>{t('settings.account')}</Text>

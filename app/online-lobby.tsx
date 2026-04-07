@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Platform, Pressable, ActivityIndicator, Alert, Share } from 'react-native';
+import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -36,6 +37,16 @@ export default function OnlineLobbyScreen() {
   const gameStartedRef = useRef(false);
   const myIdRef = useRef('');
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleShare = async () => {
+    const link = Linking.createURL('/online-lobby', {
+      queryParams: { action: 'join', roomCode: roomId },
+    });
+    await Share.share({
+      message: `${t('lobby.shareMessage', { code: roomId })}\n${link}`,
+      title: t('lobby.shareInvite'),
+    });
+  };
 
   const connectWebSocket = useCallback(() => {
     try {
@@ -224,6 +235,12 @@ export default function OnlineLobbyScreen() {
             <Text style={styles.roomCodeLabel}>{t('lobby.roomCode')}</Text>
             <Text style={styles.roomCode}>{roomId}</Text>
             <Text style={styles.roomCodeHint}>{t('lobby.shareCode')}</Text>
+            {params.action === 'create' && (
+              <Pressable style={styles.shareBtn} onPress={handleShare}>
+                <MaterialCommunityIcons name="share-variant" size={16} color={Colors.textDark} />
+                <Text style={styles.shareBtnText}>{t('lobby.shareInvite')}</Text>
+              </Pressable>
+            )}
           </View>
 
           <View style={styles.playersSection}>
@@ -427,6 +444,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter_400Regular',
   },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 10, backgroundColor: Colors.gold,
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+    alignSelf: 'center',
+  },
+  shareBtnText: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.textDark },
   playersSection: {
     gap: 8,
   },

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { useSignIn, useSignUp, useOAuth } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -87,6 +87,8 @@ export default function LoginScreen() {
         const result = await signIn!.create({ identifier: email, password });
         if (result.status === 'complete') {
           await setSignInActive!({ session: result.createdSessionId });
+        } else {
+          setErrorMsg('Sign-in could not be completed. Please try again.');
         }
       }
     } catch (e: any) {
@@ -126,6 +128,7 @@ export default function LoginScreen() {
   };
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView
       contentContainerStyle={styles.scrollContent}
       keyboardShouldPersistTaps="handled"
@@ -270,6 +273,7 @@ export default function LoginScreen() {
         </>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

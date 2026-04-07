@@ -1,15 +1,23 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
-import { View } from 'react-native';
+import { View, Platform } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
+import mobileAds from 'react-native-google-mobile-ads';
 import Colors from '@/shared/constants/colors';
 import { GuestModeProvider, useGuestMode } from '@shared/hooks/useGuestMode';
 import { LanguageProvider } from '@shared/hooks/useLanguage';
 import { queryClient } from '@/shared/query-client';
+import { EntitlementProvider } from '@shared/hooks/useEntitlement';
+
+// Initialize AdMob once on startup (no-op on web)
+if (Platform.OS !== 'web') {
+  mobileAds().initialize().catch(() => {});
+}
 
 const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '';
 
@@ -60,8 +68,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AppNavigator() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+function AppWithEntitlement() {
+  const { userId } = useAuth();
+  return (
+    <EntitlementProvider userId={userId}>
+      <AuthGuard>
+        <StatusBar style="light" backgroundColor="#000000" />
+        <Stack screenOptions={{ headerShown: false }} />
+      </AuthGuard>
+    </EntitlementProvider>
+  );
 }
 
 export default function RootLayout() {
@@ -81,9 +97,7 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <GuestModeProvider>
           <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
-            <AuthGuard>
-              <AppNavigator />
-            </AuthGuard>
+            <AppWithEntitlement />
           </ClerkProvider>
         </GuestModeProvider>
       </QueryClientProvider>

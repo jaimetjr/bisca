@@ -22,6 +22,9 @@ const rooms = new Map<string, Room>();
 const playerRooms = new Map<WebSocket, string>();
 const roomAfkTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const roomAfkWarnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const playerDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+const DISCONNECT_GRACE_MS = 10_000; // 10s to reconnect before forfeit
 
 // ─── Room expiry cleanup ──────────────────────────────────────────────────────
 
@@ -105,12 +108,14 @@ function clearAfkTimer(roomCode: string) {
 function forfeitGame(state: GameState, afkPlayerId: string): GameState {
   const next = structuredClone(state) as GameState;
   next.phase = 'gameOver';
+  next.endReason = 'forfeit';
   const afkPlayer = next.players.find(p => p.id === afkPlayerId);
+  next.forfeitedBy = afkPlayer?.name;
   const winningPlayers = next.players.filter(p =>
     afkPlayer?.team !== undefined ? p.team !== afkPlayer.team : p.id !== afkPlayerId
   );
-  // Split 120 deck points evenly across winners so team total never exceeds 120
-  const winScore = winningPlayers.length > 1 ? Math.floor(120 / winningPlayers.length) : GAME_WIN_SCORE;
+  // Award all 120 points split evenly among winners
+  const winScore = Math.floor(120 / winningPlayers.length);
   next.players.forEach(p => {
     const loses = afkPlayer?.team !== undefined
       ? p.team === afkPlayer.team
@@ -166,13 +171,10 @@ export function handleWebSocket(ws: WebSocket) {
       const room = rooms.get(roomCode);
       if (room) {
         touchRoom(room);
-        // Only evict during lobby. During an active game the closing WS is
-        // typically the old lobby connection being replaced by the new game-screen
-        // connection (sent via 'reconnect'). Removing the player here would
-        // cause card plays to fail because getPlayerId() can no longer find them.
+        const leavingPlayer = room.players.find(p => p.ws === ws);
+        const leavingId = leavingPlayer?.id || '';
+
         if (room.status === 'waiting') {
-          const leavingPlayer = room.players.find(p => p.ws === ws);
-          const leavingId = leavingPlayer?.id || '';
           room.players = room.players.filter(p => p.ws !== ws);
           if (room.players.length === 0) {
             rooms.delete(roomCode);
@@ -182,6 +184,23 @@ export function handleWebSocket(ws: WebSocket) {
           } else {
             broadcast(room, { type: 'player_left', players: getPlayerList(room) });
           }
+        } else if (room.status === 'playing' && leavingId) {
+          // Give the player a grace period to reconnect before forfeiting
+          playerDisconnectTimers.set(leavingId, setTimeout(() => {
+            playerDisconnectTimers.delete(leavingId);
+            const r = rooms.get(roomCode);
+            if (!r || !r.gameState || r.gameState.phase === 'gameOver') return;
+            // Check the player hasn't reconnected with a new WS
+            const stillDisconnected = r.players.find(p => p.id === leavingId);
+            if (stillDisconnected && stillDisconnected.ws.readyState !== WebSocket.OPEN) {
+              r.gameState = forfeitGame(r.gameState, leavingId);
+              r.status = 'finished';
+              touchRoom(r);
+              clearAfkTimer(roomCode);
+              broadcastPlayerViews(r, r.gameState, 'game_update');
+              setTimeout(() => rooms.delete(roomCode), ROOM_CLEANUP_AFTER_GAME_MS);
+            }
+          }, DISCONNECT_GRACE_MS));
         }
       }
       playerRooms.delete(ws);
@@ -316,6 +335,12 @@ function handleMessage(ws: WebSocket, data: ClientMessage) {
 
     case 'reconnect': {
       const pid = data.playerId;
+      // Cancel any pending disconnect forfeit for this player
+      const disconnectTimer = playerDisconnectTimers.get(pid);
+      if (disconnectTimer) {
+        clearTimeout(disconnectTimer);
+        playerDisconnectTimers.delete(pid);
+      }
       for (const [code, room] of rooms.entries()) {
         const existing = room.players.find(p => p.id === pid);
         if (existing) {
@@ -330,6 +355,25 @@ function handleMessage(ws: WebSocket, data: ClientMessage) {
           break;
         }
       }
+      break;
+    }
+
+    case 'leave_game': {
+      const roomCode = playerRooms.get(ws);
+      if (!roomCode) return;
+      const room = rooms.get(roomCode);
+      if (!room || !room.gameState || room.gameState.phase === 'gameOver') return;
+      const playerId = getPlayerId(ws);
+      if (!playerId) return;
+      // Cancel any pending disconnect timer — we're forfeiting immediately
+      const dt = playerDisconnectTimers.get(playerId);
+      if (dt) { clearTimeout(dt); playerDisconnectTimers.delete(playerId); }
+      room.gameState = forfeitGame(room.gameState, playerId);
+      room.status = 'finished';
+      touchRoom(room);
+      clearAfkTimer(roomCode);
+      broadcastPlayerViews(room, room.gameState, 'game_update');
+      setTimeout(() => rooms.delete(roomCode), ROOM_CLEANUP_AFTER_GAME_MS);
       break;
     }
 

@@ -4,16 +4,26 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 import Colors from "@/shared/constants/colors";
 import { t } from '@/shared/i18n';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useLanguage } from '@shared/hooks/useLanguage';
+import { useEntitlement } from '@shared/hooks/useEntitlement';
+
+const BANNER_AD_UNIT_ID = __DEV__
+  ? TestIds.BANNER
+  : Platform.select({
+      ios: process.env.EXPO_PUBLIC_ADMOB_BANNER_IOS,
+      android: process.env.EXPO_PUBLIC_ADMOB_BANNER_ANDROID,
+    }) ?? TestIds.BANNER;
 
 export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const topPadding = Platform.OS === 'web' ? 67 : insets.top;
     const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
     const { isGuest, disableGuestMode } = useGuestMode();
+    const { isPremium } = useEntitlement();
     useLanguage(); // subscribe to language changes so t() output updates
 
     const handleCreateAccount = async () => {
@@ -89,6 +99,15 @@ export default function HomeScreen() {
                 <MaterialCommunityIcons name="information-outline" size={18} color={Colors.gold} />
                 <Text style={styles.rulesText}>{t('home.rules')}</Text>
             </View>
+
+            {!isPremium && Platform.OS !== 'web' && (
+                <View style={styles.bannerContainer}>
+                    <BannerAd
+                        unitId={BANNER_AD_UNIT_ID}
+                        size={BannerAdSize.BANNER}
+                    />
+                </View>
+            )}
 
             <View style={styles.footer}>
                 <View style={styles.footerDivider} />
@@ -287,5 +306,9 @@ const styles = StyleSheet.create({
         color: Colors.gold,
         fontSize: 12,
         fontFamily: 'Inter_600SemiBold',
+    },
+    bannerContainer: {
+        alignItems: 'center',
+        marginBottom: 8,
     },
 });

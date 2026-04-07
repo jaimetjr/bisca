@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,9 +26,22 @@ export default function CompleteProfileScreen() {
     checked.current = true;
 
     (async () => {
+      // Wait for a valid token — Clerk may need a moment after sign-up
+      let token: string | null = null;
+      for (let i = 0; i < 5; i++) {
+        token = await getToken();
+        if (token) break;
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      if (!token) {
+        setErrorMsg('Session not ready — please try again');
+        setLoading(false);
+        return;
+      }
+
       try {
         // Check if profile already exists (e.g. returning user signed in with Google)
-        const token = await getToken();
         const res = await fetch(`${getApiUrl()}api/users/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -47,7 +60,6 @@ export default function CompleteProfileScreen() {
         if (raw) {
           const pending = JSON.parse(raw);
           if (pending.firstName && pending.lastName && pending.dateOfBirth) {
-            const token = await getToken();
             const res = await fetch(`${getApiUrl()}api/users/profile`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -135,6 +147,7 @@ export default function CompleteProfileScreen() {
   }
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
       <LinearGradient
         colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
@@ -187,6 +200,7 @@ export default function CompleteProfileScreen() {
         )}
       </Pressable>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

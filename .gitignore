@@ -42,3 +42,5 @@ yarn-error.*
 /android
 .claude/settings.local.json
 CLAUDE.md
+.env.development
+.env.production

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, Animated, Modal, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Platform, Pressable, Animated, Modal, useWindowDimensions, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -27,6 +27,11 @@ import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { useSettings } from '@/shared/hooks/useSettings';
 import { takeGameWs } from '@/shared/ws-store';
 import { useLanguage } from '@shared/hooks/useLanguage';
+import { useAuth } from '@clerk/clerk-expo';
+import { useGuestMode } from '@shared/hooks/useGuestMode';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEntitlement } from '@shared/hooks/useEntitlement';
+import { useInterstitialAd } from '@shared/hooks/useInterstitialAd';
 
 const AI_NAMES = ['Carlos', 'Maria', 'Pedro'];
 const HUMAN_ID = 'human';
@@ -81,6 +86,7 @@ export default function GameScreen() {
 
   const [myId, setMyId] = useState(isOnline ? (params.myPlayerId || '') : HUMAN_ID);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const isMyTurn = gameState?.players[gameState.currentPlayerIndex]?.id === myId && gameState?.phase === 'playing';
   const [errorMsg, setErrorMsg] = useState('');
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showAfkWarning, setShowAfkWarning] = useState(false);
@@ -94,6 +100,16 @@ export default function GameScreen() {
   const afkCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const myIdRef = useRef(myId);
   myIdRef.current = myId;
+
+  const { getToken } = useAuth();
+  const { isGuest } = useGuestMode();
+  const queryClient = useQueryClient();
+  const { isPremium } = useEntitlement();
+  const { showAd } = useInterstitialAd(isPremium);
+  const historySavedRef = useRef(false);
+  const turnPulseAnim = useRef(new Animated.Value(1)).current;
+  const turnPulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const handGlowAnim = useRef(new Animated.Value(0)).current;
 
   const initGame = useCallback(() => {
     const is2v2 = numPlayers === 4;
@@ -113,6 +129,7 @@ export default function GameScreen() {
 
     setErrorMsg('');
     seenCardIdsRef.current = new Set();
+    historySavedRef.current = false;
   }, [numPlayers, playerName, difficulty]);
 
   const sendWsMessage = useCallback((msg: ClientMessage) => {
@@ -254,6 +271,57 @@ export default function GameScreen() {
     return () => { if (trickTimerRef.current) clearTimeout(trickTimerRef.current); };
   }, [gameState?.phase, isOnline, trickDisplayMs]);
 
+  useEffect(() => {
+    if (gameState?.phase !== 'gameOver' || isGuest || historySavedRef.current) return;
+    historySavedRef.current = true;
+
+    const humanPlayer = gameState.players.find(p => p.id === myId);
+    if (!humanPlayer) return;
+
+    const opponentScore = Math.max(
+      ...gameState.players.filter(p => p.id !== myId).map(p => p.score)
+    );
+    const result = humanPlayer.score > opponentScore ? 'win' : 'loss';
+
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const baseUrl = getApiUrl();
+        await fetch(`${baseUrl}api/game-history`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            result,
+            score: humanPlayer.score,
+            opponentScore,
+            mode: isOnline ? 'online' : 'ai',
+            aiDifficulty: isOnline ? undefined : difficulty,
+          }),
+        });
+        queryClient.invalidateQueries({ queryKey: ['stats'] });
+      } catch {}
+    })();
+  }, [gameState?.phase]);
+
+  useEffect(() => {
+    if (isMyTurn) {
+      turnPulseLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(turnPulseAnim, { toValue: 1.12, duration: 600, useNativeDriver: true }),
+          Animated.timing(turnPulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ])
+      );
+      turnPulseLoopRef.current.start();
+      Animated.timing(handGlowAnim, { toValue: 1, duration: 350, useNativeDriver: false }).start();
+    } else {
+      turnPulseLoopRef.current?.stop();
+      turnPulseLoopRef.current = null;
+      turnPulseAnim.setValue(1);
+      Animated.timing(handGlowAnim, { toValue: 0, duration: 250, useNativeDriver: false }).start();
+    }
+  }, [isMyTurn]);
+
   const handlePlayCard = useCallback((card: Card) => {
     if (!gameState || gameState.phase !== 'playing') return;
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
@@ -290,7 +358,6 @@ export default function GameScreen() {
   }
 
   const opponents = gameState.players.filter(p => p.id !== myId);
-  const isMyTurn = gameState.players[gameState.currentPlayerIndex]?.id === myId && gameState.phase === 'playing';
   const teamMode = humanPlayer.team !== undefined;
   const getOpponentPosition = (index: number): 'top' | 'left' | 'right' => {
     if (opponents.length === 1) return 'top';
@@ -317,15 +384,35 @@ export default function GameScreen() {
 
       <View style={styles.topBar}>
         <Pressable style={styles.backBtn} onPress={() => {
-          if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
-          router.replace('/');
+          const leave = () => {
+            if (wsRef.current) {
+              if (isOnline && gameState.phase !== 'gameOver') {
+                sendWsMessage({ type: 'leave_game' });
+              }
+              wsRef.current.onclose = null;
+              wsRef.current.close();
+            }
+            router.replace('/');
+          };
+          if (isOnline && gameState.phase !== 'gameOver') {
+            Alert.alert(
+              t('game.leaveTitle'),
+              t('game.leaveMessage'),
+              [
+                { text: t('game.leaveCancel'), style: 'cancel' },
+                { text: t('game.leaveConfirm'), style: 'destructive', onPress: leave },
+              ]
+            );
+          } else {
+            leave();
+          }
         }} testID="game-back-btn">
           <MaterialCommunityIcons name="close" size={22} color={Colors.white} />
         </Pressable>
         {isMyTurn && (
-          <View style={styles.turnIndicator}>
+          <Animated.View style={[styles.turnIndicator, { transform: [{ scale: turnPulseAnim }] }]}>
             <Text style={styles.turnText}>{t('game.yourTurn')}</Text>
-          </View>
+          </Animated.View>
         )}
       </View>
 
@@ -345,7 +432,22 @@ export default function GameScreen() {
         <GameTable gameState={gameState} humanPlayerId={myId} />
       </View>
 
-      <View style={styles.handContainer}>
+      <Animated.View style={[
+        styles.handContainer,
+        {
+          borderWidth: handGlowAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 2] }),
+          borderColor: Colors.gold,
+          borderRadius: 14,
+          shadowColor: Colors.gold,
+          shadowOpacity: handGlowAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.7] }),
+          shadowRadius: handGlowAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 18] }),
+          shadowOffset: { width: 0, height: 0 },
+          elevation: handGlowAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }),
+        },
+      ]}>
+        <Animated.Text style={[styles.handTurnLabel, { opacity: handGlowAnim }]}>
+          {t('game.yourTurn')}
+        </Animated.Text>
         <View style={styles.hand}>
           {humanPlayer.hand.map((card, i) => {
             const isNew = !seenCardIdsRef.current.has(card.id);
@@ -363,23 +465,29 @@ export default function GameScreen() {
             );
           })}
         </View>
-      </View>
+      </Animated.View>
 
       {gameState.phase === 'gameOver' && (
         <ScoreBoard
           players={gameState.players}
           myId={isOnline ? myId : undefined}
+          endReason={gameState.endReason}
+          forfeitedBy={gameState.forfeitedBy}
           onPlayAgain={() => {
-            if (isOnline) {
-              if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
-              router.replace('/');
-            } else {
-              initGame();
-            }
+            showAd().then(() => {
+              if (isOnline) {
+                if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
+                router.replace('/');
+              } else {
+                initGame();
+              }
+            });
           }}
           onExit={() => {
-            if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
-            router.replace('/');
+            showAd().then(() => {
+              if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
+              router.replace('/');
+            });
           }}
         />
       )}
@@ -476,7 +584,17 @@ const styles = StyleSheet.create({
   },
   handContainer: {
     alignItems: 'center',
+    padding: 6,
     paddingBottom: 4,
+  },
+  handTurnLabel: {
+    color: Colors.gold,
+    fontSize: 11,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    textAlign: 'center',
   },
   hand: {
     flexDirection: 'row',

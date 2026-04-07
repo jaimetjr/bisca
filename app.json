@@ -19,6 +19,7 @@
     "android": {
       "package": "com.brisca",
       "usesCleartextTraffic": true,
+      "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "backgroundColor": "#1a472a",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -34,8 +35,12 @@
       "expo-font",
       "expo-web-browser",
       "expo-localization",
-      "expo-image",
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      "react-native-google-mobile-ads"
+    ],
+    "extra": {
+      "router": {}
+    },
+    "owner": "jaimetjr"
   }
 }
