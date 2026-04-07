@@ -17,7 +17,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:load": "npx artillery run tests/load/ws-scenario.yml"
+    "test:load": "npx artillery run tests/load/ws-scenario.yml",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@clerk/backend": "^3.2.0",
@@ -36,6 +38,7 @@
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.13",
     "expo-crypto": "~15.0.8",
+    "expo-dev-client": "~6.0.20",
     "expo-font": "~14.0.11",
     "expo-glass-effect": "~0.1.9",
     "expo-haptics": "~15.0.8",

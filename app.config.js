@@ -18,9 +18,6 @@ module.exports = {
     plugins,
     extra: {
       ...baseConfig.expo.extra,
-      eas: {
-        projectId: process.env.EAS_PROJECT_ID ?? '',
-      },
     },
   },
 };

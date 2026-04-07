@@ -39,7 +39,10 @@
       "react-native-google-mobile-ads"
     ],
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "85b0e0a6-c124-4edf-9466-da947b7e5f31"
+      }
     },
     "owner": "jaimetjr"
   }
