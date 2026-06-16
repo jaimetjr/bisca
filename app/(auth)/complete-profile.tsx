@@ -6,13 +6,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Colors from '@/shared/constants/colors';
-import { isAtLeast18, dobToISO } from '@shared/lib/date';
+import { isAtLeast18, dobToISO, formatLocaleDate, getLocaleDatePlaceholder, isoToLocaleDate } from '@shared/lib/date';
 import { getApiUrl } from '@shared/query-client';
+import { t } from '@/shared/i18n';
+import { useLanguage } from '@shared/hooks/useLanguage';
 
 export default function CompleteProfileScreen() {
   const { getToken } = useAuth();
   const { user } = useUser();
   const router = useRouter();
+  useLanguage(); // subscribe to language changes so t() output updates
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -35,7 +38,7 @@ export default function CompleteProfileScreen() {
       }
 
       if (!token) {
-        setErrorMsg('Session not ready — please try again');
+        setErrorMsg(t('auth.errSessionNotReady'));
         setLoading(false);
         return;
       }
@@ -71,11 +74,10 @@ export default function CompleteProfileScreen() {
               return;
             }
             // Submission failed — fall through to show the form pre-filled
-            const [y, m, d] = pending.dateOfBirth.split('-');
             if (pending.firstName) setFirstName(pending.firstName);
             if (pending.lastName) setLastName(pending.lastName);
-            setDateOfBirth(`${d}/${m}/${y}`);
-            setErrorMsg('Failed to save profile — please try again');
+            setDateOfBirth(isoToLocaleDate(pending.dateOfBirth));
+            setErrorMsg(t('auth.errSaveFailedRetry'));
             setLoading(false);
             return;
           }
@@ -88,19 +90,19 @@ export default function CompleteProfileScreen() {
 
       setLoading(false);
     })();
-  }, [user]);
+  }, [user, getToken, router]);
 
   const handleSubmit = async () => {
     if (!firstName.trim() || !lastName.trim()) {
-      setErrorMsg('Please enter your first and last name');
+      setErrorMsg(t('auth.errNameRequired'));
       return;
     }
     if (!dateOfBirth.trim()) {
-      setErrorMsg('Please enter your date of birth (DD/MM/YYYY)');
+      setErrorMsg(t('auth.errDobRequired'));
       return;
     }
     if (!isAtLeast18(dateOfBirth)) {
-      setErrorMsg('You must be at least 18 years old to create an account');
+      setErrorMsg(t('auth.errUnder18'));
       return;
     }
 
@@ -123,7 +125,7 @@ export default function CompleteProfileScreen() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setErrorMsg(data.error ?? 'Failed to save profile');
+        setErrorMsg(data.error ?? t('auth.errSaveFailed'));
         return;
       }
 
@@ -131,7 +133,7 @@ export default function CompleteProfileScreen() {
       await AsyncStorage.removeItem('pending_profile');
       router.replace('/');
     } catch {
-      setErrorMsg('Network error — please try again');
+      setErrorMsg(t('auth.errNetwork'));
     } finally {
       setLoading(false);
     }
@@ -157,14 +159,14 @@ export default function CompleteProfileScreen() {
       <View style={styles.logoContainer}>
         <MaterialCommunityIcons name="account-circle" size={56} color={Colors.gold} />
       </View>
-      <Text style={styles.title}>Complete Profile</Text>
-      <Text style={styles.subtitle}>Just a few more details before you start playing</Text>
+      <Text style={styles.title}>{t('auth.completeProfile')}</Text>
+      <Text style={styles.subtitle}>{t('auth.completeProfileSubtitle')}</Text>
 
       <TextInput
         style={styles.input}
         value={firstName}
         onChangeText={setFirstName}
-        placeholder="First Name"
+        placeholder={t('auth.firstName')}
         placeholderTextColor={Colors.textSecondary}
         autoCapitalize="words"
       />
@@ -172,17 +174,17 @@ export default function CompleteProfileScreen() {
         style={styles.input}
         value={lastName}
         onChangeText={setLastName}
-        placeholder="Last Name"
+        placeholder={t('auth.lastName')}
         placeholderTextColor={Colors.textSecondary}
         autoCapitalize="words"
       />
       <TextInput
         style={styles.input}
         value={dateOfBirth}
-        onChangeText={setDateOfBirth}
-        placeholder="Date of Birth (DD/MM/YYYY)"
+        onChangeText={(v) => setDateOfBirth(formatLocaleDate(v))}
+        placeholder={`${t('auth.dateOfBirth')} (${getLocaleDatePlaceholder()})`}
         placeholderTextColor={Colors.textSecondary}
-        keyboardType="numbers-and-punctuation"
+        keyboardType="number-pad"
         maxLength={10}
       />
 
@@ -196,7 +198,7 @@ export default function CompleteProfileScreen() {
         {loading ? (
           <ActivityIndicator color={Colors.textDark} />
         ) : (
-          <Text style={styles.primaryBtnText}>Save & Continue</Text>
+          <Text style={styles.primaryBtnText}>{t('auth.saveContinue')}</Text>
         )}
       </Pressable>
     </ScrollView>

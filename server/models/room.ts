@@ -11,4 +11,9 @@ export interface Room {
   status: 'waiting' | 'playing' | 'finished';
   isPublic: boolean;
   lastActivityAt: number;
+  /**
+   * When true, the server enforces the strict "must follow suit if able" rule.
+   * Defaults to false (casual variant) so existing rooms keep working.
+   */
+  strictFollowSuit?: boolean;
 }

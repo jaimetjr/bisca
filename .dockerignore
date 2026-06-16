@@ -1,0 +1,14 @@
+node_modules
+server_dist
+dist
+.expo
+.git
+.github
+.env
+.env.*
+ios
+android
+static-build
+tests
+*.log
+.DS_Store

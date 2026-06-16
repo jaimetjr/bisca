@@ -34,28 +34,90 @@ describe('invalid message', () => {
 });
 
 describe('reconnect', () => {
-  it('receives current game state on reconnect', async () => {
+  it('receives current game state on reconnect with valid token', async () => {
     // Start a 2-player game
-    const { ws: hostWs, roomCode, playerId: hostId } = await createRoom(wsUrl, 'Host');
+    const { ws: hostWs, roomCode, playerId: hostId, reconnectToken } = await createRoom(wsUrl, 'Host');
     const { ws: guestWs } = await joinRoom(wsUrl, roomCode, 'Guest');
 
-    const [hostStart] = await Promise.all([
+    await Promise.all([
       waitForMessage(hostWs, 'game_start'),
       waitForMessage(guestWs, 'game_start'),
       (async () => send(hostWs, { type: 'start_game' }))(),
     ]);
 
-    // Simulate reconnect: open new WS and send reconnect with the host's playerId
+    // Simulate reconnect: open new WS and send reconnect with the host's playerId + token
     const newWs = await openWS(wsUrl);
     const reconnectedPromise = waitForMessage(newWs, 'reconnected') as
       Promise<Extract<ServerMessage, { type: 'reconnected' }>>;
-    send(newWs, { type: 'reconnect', playerId: hostId });
+    send(newWs, { type: 'reconnect', playerId: hostId, reconnectToken });
     const reconnected = await reconnectedPromise;
 
     expect(reconnected.gameState).toBeDefined();
     expect((reconnected.gameState as GameState).phase).toBe('playing');
 
     hostWs.close(); guestWs.close(); newWs.close();
+  });
+
+  it('rejects reconnect without a token', async () => {
+    const { ws: hostWs, roomCode, playerId: hostId } = await createRoom(wsUrl, 'Host');
+    const { ws: guestWs } = await joinRoom(wsUrl, roomCode, 'Guest');
+
+    await Promise.all([
+      waitForMessage(hostWs, 'game_start'),
+      waitForMessage(guestWs, 'game_start'),
+      (async () => send(hostWs, { type: 'start_game' }))(),
+    ]);
+
+    const newWs = await openWS(wsUrl);
+    const errPromise = waitForMessage(newWs, 'error') as
+      Promise<Extract<ServerMessage, { type: 'error' }>>;
+    send(newWs, { type: 'reconnect', playerId: hostId });
+    const err = await errPromise;
+    expect(err.code).toBe('INVALID_TOKEN');
+
+    hostWs.close(); guestWs.close(); newWs.close();
+  });
+
+  it('rejects reconnect with a forged token', async () => {
+    const { ws: hostWs, roomCode, playerId: hostId } = await createRoom(wsUrl, 'Host');
+    const { ws: guestWs } = await joinRoom(wsUrl, roomCode, 'Guest');
+
+    await Promise.all([
+      waitForMessage(hostWs, 'game_start'),
+      waitForMessage(guestWs, 'game_start'),
+      (async () => send(hostWs, { type: 'start_game' }))(),
+    ]);
+
+    const newWs = await openWS(wsUrl);
+    const errPromise = waitForMessage(newWs, 'error') as
+      Promise<Extract<ServerMessage, { type: 'error' }>>;
+    const forged = `${hostId}.${roomCode}.${Date.now() + 60000}.deadbeef`;
+    send(newWs, { type: 'reconnect', playerId: hostId, reconnectToken: forged });
+    const err = await errPromise;
+    expect(err.code).toBe('INVALID_TOKEN');
+
+    hostWs.close(); guestWs.close(); newWs.close();
+  });
+});
+
+describe('input validation', () => {
+  it('rejects malformed payload (missing required field) as INVALID_MESSAGE', async () => {
+    const ws = await openWS(wsUrl);
+    const errPromise = waitForMessage(ws, 'error') as Promise<Extract<ServerMessage, { type: 'error' }>>;
+    // create_room without playerName/maxPlayers
+    ws.send(JSON.stringify({ type: 'create_room' }));
+    const err = await errPromise;
+    expect(err.code).toBe('INVALID_MESSAGE');
+    ws.close();
+  });
+
+  it('rejects unknown message type as INVALID_MESSAGE', async () => {
+    const ws = await openWS(wsUrl);
+    const errPromise = waitForMessage(ws, 'error') as Promise<Extract<ServerMessage, { type: 'error' }>>;
+    ws.send(JSON.stringify({ type: 'totally_made_up', foo: 'bar' }));
+    const err = await errPromise;
+    expect(err.code).toBe('INVALID_MESSAGE');
+    ws.close();
   });
 });
 

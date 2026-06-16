@@ -1,10 +1,9 @@
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import * as SecureStore from 'expo-secure-store';
-import { useRouter, useSegments } from 'expo-router';
 import { View, Platform } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import mobileAds from 'react-native-google-mobile-ads';
@@ -13,6 +12,7 @@ import { GuestModeProvider, useGuestMode } from '@shared/hooks/useGuestMode';
 import { LanguageProvider } from '@shared/hooks/useLanguage';
 import { queryClient } from '@/shared/query-client';
 import { EntitlementProvider } from '@shared/hooks/useEntitlement';
+import { RewardsProvider } from '@shared/hooks/useRewards';
 
 // Initialize AdMob once on startup (no-op on web)
 if (Platform.OS !== 'web') {
@@ -63,7 +63,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (isSignedIn && inAuthGroup && onLoginScreen) {
       router.replace('/(auth)/complete-profile');
     }
-  }, [isSignedIn, clerkLoaded, guestLoaded, isGuest, inAuthGroup, onLoginScreen]);
+  }, [isSignedIn, clerkLoaded, guestLoaded, isGuest, inAuthGroup, onLoginScreen, router]);
 
   return <>{children}</>;
 }
@@ -72,10 +72,12 @@ function AppWithEntitlement() {
   const { userId } = useAuth();
   return (
     <EntitlementProvider userId={userId}>
-      <AuthGuard>
-        <StatusBar style="light" backgroundColor="#000000" />
-        <Stack screenOptions={{ headerShown: false }} />
-      </AuthGuard>
+      <RewardsProvider>
+        <AuthGuard>
+          <StatusBar style="light" backgroundColor="#000000" />
+          <Stack screenOptions={{ headerShown: false }} />
+        </AuthGuard>
+      </RewardsProvider>
     </EntitlementProvider>
   );
 }

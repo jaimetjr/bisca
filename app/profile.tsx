@@ -79,7 +79,7 @@ export default function ProfileScreen() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [getToken]);
 
   const handleSave = async () => {
     if (!firstName.trim() || !lastName.trim()) {

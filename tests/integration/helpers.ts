@@ -71,12 +71,12 @@ export async function createRoom(
   playerName = 'Host',
   maxPlayers = 2,
   isPublic = false,
-): Promise<{ ws: WebSocket; roomCode: string; playerId: string }> {
+): Promise<{ ws: WebSocket; roomCode: string; playerId: string; reconnectToken: string }> {
   const ws = await openWS(wsUrl);
   const msgPromise = waitForMessage(ws, 'room_created');
   send(ws, { type: 'create_room', playerName, maxPlayers, isPublic });
   const msg = await msgPromise as Extract<ServerMessage, { type: 'room_created' }>;
-  return { ws, roomCode: msg.roomCode, playerId: msg.playerId };
+  return { ws, roomCode: msg.roomCode, playerId: msg.playerId, reconnectToken: msg.reconnectToken };
 }
 
 /** Convenience: join a room and return the room_joined payload. */
@@ -84,10 +84,10 @@ export async function joinRoom(
   wsUrl: string,
   roomCode: string,
   playerName = 'Joiner',
-): Promise<{ ws: WebSocket; playerId: string }> {
+): Promise<{ ws: WebSocket; playerId: string; reconnectToken: string }> {
   const ws = await openWS(wsUrl);
   const msgPromise = waitForMessage(ws, 'room_joined');
   send(ws, { type: 'join_room', roomCode, playerName });
   const msg = await msgPromise as Extract<ServerMessage, { type: 'room_joined' }>;
-  return { ws, playerId: msg.playerId };
+  return { ws, playerId: msg.playerId, reconnectToken: msg.reconnectToken };
 }

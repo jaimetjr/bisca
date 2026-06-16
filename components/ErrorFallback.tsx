@@ -12,6 +12,20 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import { t } from "@/shared/i18n";
+
+// Defensive wrapper: this is the last-ditch error fallback, so even if i18n
+// is broken we still render readable English. `t()` itself returns the key
+// as fallback for missing translations — that's why we keep a hard-coded
+// default alongside.
+function safeT(key: string, fallback: string): string {
+  try {
+    const out = t(key);
+    return out === key ? fallback : out;
+  } catch {
+    return fallback;
+  }
+}
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -79,11 +93,11 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
       <View style={styles.content}>
         <Text style={[styles.title, { color: theme.text }]}>
-          {(() => { try { const { t } = require('@/lib/i18n'); return t('error.title'); } catch { return 'Something went wrong'; } })()}
+          {safeT('error.title', 'Something went wrong')}
         </Text>
 
         <Text style={[styles.message, { color: theme.textSecondary }]}>
-          {(() => { try { const { t } = require('@/lib/i18n'); return t('error.message'); } catch { return 'Please reload the app to continue.'; } })()}
+          {safeT('error.message', 'Please reload the app to continue.')}
         </Text>
 
         <Pressable
@@ -98,7 +112,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           ]}
         >
           <Text style={[styles.buttonText, { color: theme.buttonText }]}>
-            {(() => { try { const { t } = require('@/lib/i18n'); return t('error.tryAgain'); } catch { return 'Try Again'; } })()}
+            {safeT('error.tryAgain', 'Try Again')}
           </Text>
         </Pressable>
       </View>
@@ -128,7 +142,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
                 ]}
               >
                 <Text style={[styles.modalTitle, { color: theme.text }]}>
-                  {(() => { try { const { t } = require('@/lib/i18n'); return t('error.details'); } catch { return 'Error Details'; } })()}
+                  {safeT('error.details', 'Error Details')}
                 </Text>
                 <Pressable
                   onPress={() => setIsModalVisible(false)}

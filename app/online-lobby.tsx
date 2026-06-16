@@ -36,6 +36,7 @@ export default function OnlineLobbyScreen() {
   const wsRef = useRef<WebSocket | null>(null);
   const gameStartedRef = useRef(false);
   const myIdRef = useRef('');
+  const reconnectTokenRef = useRef('');
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleShare = async () => {
@@ -79,6 +80,7 @@ export default function OnlineLobbyScreen() {
               setRoomId(data.roomCode);
               setMyId(data.playerId);
               myIdRef.current = data.playerId;
+              reconnectTokenRef.current = data.reconnectToken;
               setPlayers(data.players);
               setMaxPlayers(data.maxPlayers);
               setStatus('waiting');
@@ -100,7 +102,7 @@ export default function OnlineLobbyScreen() {
                 ws.onmessage = null;
                 ws.onerror = null;
                 ws.onclose = null;
-                storeGameWs(ws, data.playerId || myIdRef.current);
+                storeGameWs(ws, data.playerId || myIdRef.current, reconnectTokenRef.current);
                 wsRef.current = null; // prevents lobby cleanup from closing it
                 router.replace({
                   pathname: '/game',
@@ -169,6 +171,9 @@ export default function OnlineLobbyScreen() {
         wsRef.current = null;
       }
     };
+    // Mount-once: re-running on connectWebSocket changes would tear down and
+    // re-open the live socket, kicking the player off the lobby.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleStartGame = () => {

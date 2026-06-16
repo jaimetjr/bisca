@@ -10,6 +10,8 @@ import { t } from '@/shared/i18n';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
+import { useRewards } from '@shared/hooks/useRewards';
+import { useRewardedAd } from '@shared/hooks/useRewardedAd';
 
 const BANNER_AD_UNIT_ID = __DEV__
   ? TestIds.BANNER
@@ -24,12 +26,35 @@ export default function HomeScreen() {
     const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
     const { isGuest, disableGuestMode } = useGuestMode();
     const { isPremium } = useEntitlement();
+    const rewards = useRewards();
+    const { isLoaded: rewardedLoaded, showAd: showRewardedAd } = useRewardedAd({
+        onEarned: () => { void rewards.grantSkipPass(); },
+        disabled: isPremium || Platform.OS === 'web',
+    });
     useLanguage(); // subscribe to language changes so t() output updates
 
     const handleCreateAccount = async () => {
         await disableGuestMode();
         router.replace('/(auth)/login');
     };
+
+    const canEarnReward = rewards.canEarnMore();
+    const cooldownMs = rewards.timeUntilNextRewardMs();
+    const showRewardedTile = !isPremium && Platform.OS !== 'web';
+    const skipPasses = rewards.skipPasses;
+    const rewardedDesc =
+        skipPasses === 0
+            ? t('rewards.skipPassDescZero')
+            : skipPasses === 1
+                ? t('rewards.skipPassDescOne')
+                : t('rewards.skipPassDescMany', { count: skipPasses });
+    const rewardedDisabled = !rewardedLoaded || !canEarnReward;
+    const rewardedSubtext = !canEarnReward
+        ? t('rewards.coolingDown', { minutes: Math.max(1, Math.ceil(cooldownMs / 60_000)) })
+        : !rewardedLoaded
+            ? t('rewards.unavailable')
+            : rewardedDesc;
+    const handleRewardedPress = () => { void showRewardedAd(); };
 
     return (
         <View style={[styles.container, { paddingTop: topPadding + 20, paddingBottom: bottomPadding + 20 }]}>
@@ -41,7 +66,7 @@ export default function HomeScreen() {
             {isGuest && (
                 <Pressable style={styles.guestBanner} onPress={handleCreateAccount}>
                     <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Colors.gold} />
-                    <Text style={styles.guestBannerText}>Playing as Guest — stats won't be saved.</Text>
+                    <Text style={styles.guestBannerText}>Playing as Guest &mdash; stats won&apos;t be saved.</Text>
                     <Text style={styles.guestBannerCta}>Create Account</Text>
                 </Pressable>
             )}
@@ -52,6 +77,12 @@ export default function HomeScreen() {
                 </Pressable>
                 <Pressable style={styles.iconBtn} onPress={() => router.push('/stats')} testID="stats-btn">
                     <MaterialCommunityIcons name="chart-bar" size={22} color={Colors.textSecondary} />
+                </Pressable>
+                <Pressable style={styles.iconBtn} onPress={() => router.push('/quests')} testID="quests-btn">
+                    <MaterialCommunityIcons name="calendar-check" size={22} color={Colors.textSecondary} />
+                </Pressable>
+                <Pressable style={styles.iconBtn} onPress={() => router.push('/achievements')} testID="achievements-btn">
+                    <MaterialCommunityIcons name="trophy-outline" size={22} color={Colors.textSecondary} />
                 </Pressable>
             </View>
 
@@ -99,6 +130,30 @@ export default function HomeScreen() {
                 <MaterialCommunityIcons name="information-outline" size={18} color={Colors.gold} />
                 <Text style={styles.rulesText}>{t('home.rules')}</Text>
             </View>
+
+            {showRewardedTile && (
+                <Pressable
+                    style={({ pressed }) => [
+                        styles.rewardedTile,
+                        rewardedDisabled && styles.rewardedTileDisabled,
+                        pressed && !rewardedDisabled && { opacity: 0.85, transform: [{ scale: 0.99 }] },
+                    ]}
+                    onPress={handleRewardedPress}
+                    disabled={rewardedDisabled}
+                    testID="rewarded-skip-btn"
+                >
+                    <MaterialCommunityIcons name="gift-outline" size={20} color={Colors.gold} />
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.rewardedTileTitle}>{t('rewards.skipPassTitle')}</Text>
+                        <Text style={styles.rewardedTileSubtext}>{rewardedSubtext}</Text>
+                    </View>
+                    {skipPasses > 0 && (
+                        <View style={styles.rewardedBadge}>
+                            <Text style={styles.rewardedBadgeText}>{skipPasses}</Text>
+                        </View>
+                    )}
+                </Pressable>
+            )}
 
             {!isPremium && Platform.OS !== 'web' && (
                 <View style={styles.bannerContainer}>
@@ -310,5 +365,45 @@ const styles = StyleSheet.create({
     bannerContainer: {
         alignItems: 'center',
         marginBottom: 8,
+    },
+    rewardedTile: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        backgroundColor: Colors.whiteAlpha2,
+        borderWidth: 1,
+        borderColor: Colors.whiteAlpha,
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        marginBottom: 12,
+    },
+    rewardedTileDisabled: {
+        opacity: 0.5,
+    },
+    rewardedTileTitle: {
+        color: Colors.white,
+        fontSize: 13,
+        fontFamily: 'Inter_600SemiBold',
+    },
+    rewardedTileSubtext: {
+        color: Colors.textSecondary,
+        fontSize: 11,
+        fontFamily: 'Inter_400Regular',
+        marginTop: 2,
+    },
+    rewardedBadge: {
+        backgroundColor: Colors.gold,
+        minWidth: 24,
+        height: 24,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+    },
+    rewardedBadgeText: {
+        color: Colors.textDark,
+        fontSize: 12,
+        fontFamily: 'Inter_700Bold',
     },
 });

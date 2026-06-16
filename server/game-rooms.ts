@@ -1,9 +1,9 @@
 import { WebSocket } from 'ws';
+import type { IncomingMessage } from 'node:http';
 import { Room } from './models/room';
 import { GameState } from '../shared/lib/types';
-import { completeTrick, createGameState, playCard } from '../shared/lib/brisca/engine';
+import { completeTrick, createGameState, isLegalPlay, playCard } from '../shared/lib/brisca/engine';
 import {
-  ClientMessage,
   ServerMessage,
   RoomPlayerInfo,
   PublicRoomInfo,
@@ -17,28 +17,61 @@ import {
   AFK_WARNING_MS,
   GAME_WIN_SCORE,
 } from '../shared/constants/game';
+import {
+  clientMessageSchema,
+  type ValidatedClientMessage,
+} from '../shared/lib/validation/client-messages';
+import { issueReconnectToken, verifyReconnectToken } from './lib/reconnect-token';
+import { createRoomLimiter, messageLimiter } from './lib/rate-limit';
+import { logger } from './lib/logger';
+import { getRoomStore } from './stores';
 
-const rooms = new Map<string, Room>();
-const playerRooms = new Map<WebSocket, string>();
+const log = logger.child({ module: 'game-rooms' });
+import {
+  attachConnection,
+  detachByWs,
+  getLocation,
+  getWsForPlayer,
+} from './connections/registry';
+
 const roomAfkTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const roomAfkWarnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const playerDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const wsClientIp = new WeakMap<WebSocket, string>();
 
 const DISCONNECT_GRACE_MS = 10_000; // 10s to reconnect before forfeit
 
+function clientIpFor(ws: WebSocket): string {
+  return wsClientIp.get(ws) ?? 'unknown';
+}
+
+function clientIpFromRequest(request: IncomingMessage): string {
+  const fwd = request.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.length > 0) {
+    return fwd.split(',')[0].trim();
+  }
+  return request.socket.remoteAddress ?? 'unknown';
+}
+
 // ─── Room expiry cleanup ──────────────────────────────────────────────────────
 
-setInterval(() => {
-  const now = Date.now();
-  for (const [code, room] of rooms.entries()) {
-    if (now - room.lastActivityAt > ROOM_EXPIRY_MS) {
-      for (const p of room.players) {
-        sendTo(p.ws, { type: 'error', message: 'Room expired due to inactivity', code: 'ROOM_NOT_FOUND' });
-        playerRooms.delete(p.ws);
+setInterval(async () => {
+  try {
+    const store = getRoomStore();
+    const all = await store.list();
+    const now = Date.now();
+    for (const room of all) {
+      if (now - room.lastActivityAt > ROOM_EXPIRY_MS) {
+        for (const p of room.players) {
+          const ws = getWsForPlayer(p.id);
+          if (ws) sendTo(ws, { type: 'error', message: 'Room expired due to inactivity', code: 'ROOM_NOT_FOUND' });
+        }
+        clearAfkTimer(room.code);
+        await store.delete(room.code);
       }
-      clearAfkTimer(code);
-      rooms.delete(code);
     }
+  } catch (err) {
+    log.error({ err }, 'room-cleanup error');
   }
 }, 60_000);
 
@@ -53,11 +86,13 @@ function generateRoomCode(): string {
   return code;
 }
 
-function broadcast(room: Room, message: ServerMessage, exclude?: WebSocket) {
+function broadcast(room: Room, message: ServerMessage, excludePlayerId?: string) {
   const msg = JSON.stringify(message);
   for (const player of room.players) {
-    if (player.ws !== exclude && player.ws.readyState === WebSocket.OPEN) {
-      player.ws.send(msg);
+    if (excludePlayerId && player.id === excludePlayerId) continue;
+    const ws = getWsForPlayer(player.id);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
     }
   }
 }
@@ -72,26 +107,19 @@ function getPlayerList(room: Room): RoomPlayerInfo[] {
   return room.players.map(p => ({ id: p.id, name: p.name, team: p.team }));
 }
 
-function getPlayerId(ws: WebSocket): string {
-  const roomCode = playerRooms.get(ws);
-  if (!roomCode) return '';
-  const room = rooms.get(roomCode);
-  if (!room) return '';
-  const player = room.players.find(p => p.ws === ws);
-  return player?.id || '';
-}
-
 function touchRoom(room: Room) {
   room.lastActivityAt = Date.now();
 }
 
 function broadcastPlayerViews(room: Room, state: GameState, msgType: 'game_start' | 'game_update') {
   for (const player of room.players) {
+    const ws = getWsForPlayer(player.id);
+    if (!ws) continue;
     const view = createPlayerView(state, player.id);
     if (msgType === 'game_start') {
-      sendTo(player.ws, { type: 'game_start', gameState: view, playerId: player.id });
+      sendTo(ws, { type: 'game_start', gameState: view, playerId: player.id });
     } else {
-      sendTo(player.ws, { type: 'game_update', gameState: view });
+      sendTo(ws, { type: 'game_update', gameState: view });
     }
   }
 }
@@ -129,123 +157,187 @@ function scheduleAfkTimer(room: Room, state: GameState) {
   if (state.phase !== 'playing') return;
   clearAfkTimer(room.code);
   const afkPlayerId = state.players[state.currentPlayerIndex].id;
-  const afkWs = room.players.find(p => p.id === afkPlayerId)?.ws;
+  const roomCode = room.code;
 
-  roomAfkWarnTimers.set(room.code, setTimeout(() => {
-    if (!room.gameState || room.gameState.phase !== 'playing') return;
-    const curr = room.gameState.players[room.gameState.currentPlayerIndex];
-    if (curr.id !== afkPlayerId) return;
-    if (afkWs && afkWs.readyState === WebSocket.OPEN) {
-      sendTo(afkWs, { type: 'afk_warning', secondsLeft: AFK_WARNING_MS / 1000 });
+  roomAfkWarnTimers.set(roomCode, setTimeout(async () => {
+    try {
+      const store = getRoomStore();
+      const fresh = await store.get(roomCode);
+      if (!fresh?.gameState || fresh.gameState.phase !== 'playing') return;
+      const curr = fresh.gameState.players[fresh.gameState.currentPlayerIndex];
+      if (curr.id !== afkPlayerId) return;
+      const ws = getWsForPlayer(afkPlayerId);
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        sendTo(ws, { type: 'afk_warning', secondsLeft: AFK_WARNING_MS / 1000 });
+      }
+    } catch (err) {
+      log.error({ err }, 'afk-warn error');
     }
   }, AFK_TIMEOUT_MS - AFK_WARNING_MS));
 
-  roomAfkTimers.set(room.code, setTimeout(() => {
-    if (!room.gameState || room.gameState.phase !== 'playing') return;
-    const curr = room.gameState.players[room.gameState.currentPlayerIndex];
-    if (curr.id !== afkPlayerId) return; // turn already moved
-    room.gameState = forfeitGame(room.gameState, afkPlayerId);
-    room.status = 'finished';
-    touchRoom(room);
-    broadcastPlayerViews(room, room.gameState, 'game_update');
-    clearAfkTimer(room.code);
-    setTimeout(() => rooms.delete(room.code), ROOM_CLEANUP_AFTER_GAME_MS);
+  roomAfkTimers.set(roomCode, setTimeout(async () => {
+    try {
+      const store = getRoomStore();
+      const fresh = await store.get(roomCode);
+      if (!fresh?.gameState || fresh.gameState.phase !== 'playing') return;
+      const curr = fresh.gameState.players[fresh.gameState.currentPlayerIndex];
+      if (curr.id !== afkPlayerId) return;
+      fresh.gameState = forfeitGame(fresh.gameState, afkPlayerId);
+      fresh.status = 'finished';
+      touchRoom(fresh);
+      await store.set(fresh);
+      broadcastPlayerViews(fresh, fresh.gameState, 'game_update');
+      clearAfkTimer(roomCode);
+      setTimeout(() => { void store.delete(roomCode); }, ROOM_CLEANUP_AFTER_GAME_MS);
+    } catch (err) {
+      log.error({ err }, 'afk-forfeit error');
+    }
   }, AFK_TIMEOUT_MS));
 }
 
 // ─── WebSocket entry point ────────────────────────────────────────────────────
 
-export function handleWebSocket(ws: WebSocket) {
+export function handleWebSocket(ws: WebSocket, request?: IncomingMessage) {
+  if (request) {
+    wsClientIp.set(ws, clientIpFromRequest(request));
+  }
+
   ws.on('message', (raw) => {
+    if (!messageLimiter.take(ws)) {
+      sendTo(ws, { type: 'error', message: 'Rate limit exceeded', code: 'RATE_LIMITED' });
+      try { ws.close(1008, 'rate limited'); } catch { /* noop */ }
+      return;
+    }
+
+    let parsed: unknown;
     try {
-      const data = JSON.parse(raw.toString()) as ClientMessage;
-      handleMessage(ws, data);
+      parsed = JSON.parse(raw.toString());
     } catch {
       sendTo(ws, { type: 'error', message: 'Invalid message format', code: 'INVALID_MESSAGE' });
+      return;
     }
+
+    const result = clientMessageSchema.safeParse(parsed);
+    if (!result.success) {
+      sendTo(ws, { type: 'error', message: 'Invalid message payload', code: 'INVALID_MESSAGE' });
+      return;
+    }
+    void handleMessage(ws, result.data).catch((err) => {
+      log.error({ err }, 'ws-handler error');
+      sendTo(ws, { type: 'error', message: 'Internal error', code: 'INVALID_MESSAGE' });
+    });
   });
 
   ws.on('close', () => {
-    const roomCode = playerRooms.get(ws);
-    if (roomCode) {
-      const room = rooms.get(roomCode);
-      if (room) {
-        touchRoom(room);
-        const leavingPlayer = room.players.find(p => p.ws === ws);
-        const leavingId = leavingPlayer?.id || '';
-
-        if (room.status === 'waiting') {
-          room.players = room.players.filter(p => p.ws !== ws);
-          if (room.players.length === 0) {
-            rooms.delete(roomCode);
-          } else if (room.hostId === leavingId) {
-            broadcast(room, { type: 'error', message: 'The host left the room', code: 'HOST_LEFT' });
-            rooms.delete(roomCode);
-          } else {
-            broadcast(room, { type: 'player_left', players: getPlayerList(room) });
-          }
-        } else if (room.status === 'playing' && leavingId) {
-          // Give the player a grace period to reconnect before forfeiting
-          playerDisconnectTimers.set(leavingId, setTimeout(() => {
-            playerDisconnectTimers.delete(leavingId);
-            const r = rooms.get(roomCode);
-            if (!r || !r.gameState || r.gameState.phase === 'gameOver') return;
-            // Check the player hasn't reconnected with a new WS
-            const stillDisconnected = r.players.find(p => p.id === leavingId);
-            if (stillDisconnected && stillDisconnected.ws.readyState !== WebSocket.OPEN) {
-              r.gameState = forfeitGame(r.gameState, leavingId);
-              r.status = 'finished';
-              touchRoom(r);
-              clearAfkTimer(roomCode);
-              broadcastPlayerViews(r, r.gameState, 'game_update');
-              setTimeout(() => rooms.delete(roomCode), ROOM_CLEANUP_AFTER_GAME_MS);
-            }
-          }, DISCONNECT_GRACE_MS));
-        }
-      }
-      playerRooms.delete(ws);
-    }
+    void handleClose(ws).catch((err) => log.error({ err }, 'ws-close error'));
   });
+}
+
+async function handleClose(ws: WebSocket) {
+  const loc = detachByWs(ws);
+  if (!loc) return;
+  const store = getRoomStore();
+  const room = await store.get(loc.roomCode);
+  if (!room) return;
+
+  touchRoom(room);
+  const leavingId = loc.playerId;
+
+  if (room.status === 'waiting') {
+    room.players = room.players.filter(p => p.id !== leavingId);
+    if (room.players.length === 0) {
+      await store.delete(room.code);
+      return;
+    }
+    if (room.hostId === leavingId) {
+      broadcast(room, { type: 'error', message: 'The host left the room', code: 'HOST_LEFT' });
+      await store.delete(room.code);
+      return;
+    }
+    await store.set(room);
+    broadcast(room, { type: 'player_left', players: getPlayerList(room) });
+    return;
+  }
+
+  if (room.status === 'playing') {
+    // Save the (still-touched) room before scheduling forfeit
+    await store.set(room);
+    playerDisconnectTimers.set(leavingId, setTimeout(async () => {
+      playerDisconnectTimers.delete(leavingId);
+      try {
+        const r = await store.get(loc.roomCode);
+        if (!r || !r.gameState || r.gameState.phase === 'gameOver') return;
+        // Has the player reconnected on a new WS in the meantime?
+        const reconnectedWs = getWsForPlayer(leavingId);
+        if (reconnectedWs && reconnectedWs.readyState === WebSocket.OPEN) return;
+        r.gameState = forfeitGame(r.gameState, leavingId);
+        r.status = 'finished';
+        touchRoom(r);
+        await store.set(r);
+        clearAfkTimer(loc.roomCode);
+        broadcastPlayerViews(r, r.gameState, 'game_update');
+        setTimeout(() => { void store.delete(loc.roomCode); }, ROOM_CLEANUP_AFTER_GAME_MS);
+      } catch (err) {
+        log.error({ err }, 'disconnect-forfeit error');
+      }
+    }, DISCONNECT_GRACE_MS));
+  }
 }
 
 // ─── Message handler ──────────────────────────────────────────────────────────
 
-function handleMessage(ws: WebSocket, data: ClientMessage) {
+async function handleMessage(ws: WebSocket, data: ValidatedClientMessage) {
+  const store = getRoomStore();
+
   switch (data.type) {
     case 'create_room': {
-      let code = generateRoomCode();
-      while (rooms.has(code)) code = generateRoomCode();
+      if (!createRoomLimiter.take(clientIpFor(ws))) {
+        sendTo(ws, { type: 'error', message: 'Too many rooms created — try again shortly', code: 'RATE_LIMITED' });
+        return;
+      }
 
-      const playerId = `p-${Date.now().toString(36)}`;
+      // Generate a unique code, retrying on collision
+      let code = generateRoomCode();
+      const playerId = `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       const playerName = data.playerName || 'Host';
       const maxPlayers = Math.min(4, Math.max(2, data.maxPlayers || 2));
-      const room: Room = {
-        code,
-        hostId: playerId,
-        hostName: playerName,
-        maxPlayers,
-        players: [{ id: playerId, name: playerName, ws, team: maxPlayers === 4 ? 0 : undefined }],
-        gameState: null,
-        status: 'waiting',
-        isPublic: data.isPublic !== false,
-        lastActivityAt: Date.now(),
-      };
-
-      rooms.set(code, room);
-      playerRooms.set(ws, code);
-
-      sendTo(ws, {
-        type: 'room_created',
-        roomCode: code,
-        playerId,
-        players: getPlayerList(room),
-        maxPlayers: room.maxPlayers,
-      });
+      let stored = false;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate: Room = {
+          code,
+          hostId: playerId,
+          hostName: playerName,
+          maxPlayers,
+          players: [{ id: playerId, name: playerName, team: maxPlayers === 4 ? 0 : undefined }],
+          gameState: null,
+          status: 'waiting',
+          isPublic: data.isPublic !== false,
+          lastActivityAt: Date.now(),
+          strictFollowSuit: data.strictFollowSuit === true,
+        };
+        if (await store.setIfAbsent(candidate)) {
+          stored = true;
+          attachConnection(ws, playerId, code);
+          sendTo(ws, {
+            type: 'room_created',
+            roomCode: code,
+            playerId,
+            reconnectToken: issueReconnectToken(playerId, code),
+            players: getPlayerList(candidate),
+            maxPlayers: candidate.maxPlayers,
+          });
+          break;
+        }
+        code = generateRoomCode();
+      }
+      if (!stored) {
+        sendTo(ws, { type: 'error', message: 'Failed to allocate room', code: 'INVALID_MESSAGE' });
+      }
       break;
     }
 
     case 'join_room': {
-      const room = rooms.get(data.roomCode?.toUpperCase());
+      const room = await store.get(data.roomCode?.toUpperCase());
       if (!room) {
         sendTo(ws, { type: 'error', message: 'Room not found', code: 'ROOM_NOT_FOUND' });
         return;
@@ -259,7 +351,7 @@ function handleMessage(ws: WebSocket, data: ClientMessage) {
         return;
       }
 
-      const playerId = `p-${Date.now().toString(36)}`;
+      const playerId = `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
       let team: 0 | 1 | undefined;
       if (room.maxPlayers === 4) {
@@ -272,28 +364,30 @@ function handleMessage(ws: WebSocket, data: ClientMessage) {
         }
       }
 
-      room.players.push({ id: playerId, name: data.playerName || 'Player', ws, team });
-      playerRooms.set(ws, room.code);
+      room.players.push({ id: playerId, name: data.playerName || 'Player', team });
       touchRoom(room);
+      await store.set(room);
+      attachConnection(ws, playerId, room.code);
 
       sendTo(ws, {
         type: 'room_joined',
         roomCode: room.code,
         playerId,
+        reconnectToken: issueReconnectToken(playerId, room.code),
         players: getPlayerList(room),
         maxPlayers: room.maxPlayers,
       });
 
-      broadcast(room, { type: 'player_joined', players: getPlayerList(room) }, ws);
+      broadcast(room, { type: 'player_joined', players: getPlayerList(room) }, playerId);
       break;
     }
 
     case 'switch_team': {
-      const roomCode = playerRooms.get(ws);
-      if (!roomCode) return;
-      const room = rooms.get(roomCode);
+      const loc = getLocation(ws);
+      if (!loc) return;
+      const room = await store.get(loc.roomCode);
       if (!room || room.status !== 'waiting' || room.maxPlayers !== 4) return;
-      const player = room.players.find(p => p.ws === ws);
+      const player = room.players.find(p => p.id === loc.playerId);
       if (!player) return;
       const targetCount = room.players.filter(p => p.team === data.team).length;
       if (targetCount >= 2) {
@@ -302,18 +396,18 @@ function handleMessage(ws: WebSocket, data: ClientMessage) {
       }
       player.team = data.team;
       touchRoom(room);
+      await store.set(room);
       broadcast(room, { type: 'player_joined', players: getPlayerList(room) });
       break;
     }
 
     case 'start_game': {
-      const roomCode = playerRooms.get(ws);
-      if (!roomCode) return;
-      const room = rooms.get(roomCode);
+      const loc = getLocation(ws);
+      if (!loc) return;
+      const room = await store.get(loc.roomCode);
       if (!room) return;
 
-      const playerId = getPlayerId(ws);
-      if (playerId !== room.hostId) {
+      if (loc.playerId !== room.hostId) {
         sendTo(ws, { type: 'error', message: 'Only the host can start the game', code: 'NOT_HOST' });
         return;
       }
@@ -327,6 +421,7 @@ function handleMessage(ws: WebSocket, data: ClientMessage) {
       room.gameState = gameState;
       room.status = 'playing';
       touchRoom(room);
+      await store.set(room);
 
       broadcastPlayerViews(room, gameState, 'game_start');
       scheduleAfkTimer(room, gameState);
@@ -334,63 +429,76 @@ function handleMessage(ws: WebSocket, data: ClientMessage) {
     }
 
     case 'reconnect': {
-      const pid = data.playerId;
-      // Cancel any pending disconnect forfeit for this player
+      if (!data.reconnectToken) {
+        sendTo(ws, { type: 'error', message: 'Reconnect token required', code: 'INVALID_TOKEN' });
+        return;
+      }
+      const claims = verifyReconnectToken(data.reconnectToken);
+      if (!claims || claims.playerId !== data.playerId) {
+        sendTo(ws, { type: 'error', message: 'Invalid or expired reconnect token', code: 'INVALID_TOKEN' });
+        return;
+      }
+
+      const pid = claims.playerId;
+      const room = await store.get(claims.roomCode);
+      if (!room) {
+        sendTo(ws, { type: 'error', message: 'Room no longer exists', code: 'ROOM_NOT_FOUND' });
+        return;
+      }
+      const existing = room.players.find(p => p.id === pid);
+      if (!existing) {
+        sendTo(ws, { type: 'error', message: 'Player not found in room', code: 'INVALID_TOKEN' });
+        return;
+      }
+
       const disconnectTimer = playerDisconnectTimers.get(pid);
       if (disconnectTimer) {
         clearTimeout(disconnectTimer);
         playerDisconnectTimers.delete(pid);
       }
-      for (const [code, room] of rooms.entries()) {
-        const existing = room.players.find(p => p.id === pid);
-        if (existing) {
-          existing.ws = ws;
-          playerRooms.set(ws, code);
-          touchRoom(room);
-          if (room.gameState) {
-            const view = createPlayerView(room.gameState, pid);
-            sendTo(ws, { type: 'reconnected', gameState: view });
-            scheduleAfkTimer(room, room.gameState);
-          }
-          break;
-        }
+
+      attachConnection(ws, pid, room.code);
+      touchRoom(room);
+      await store.set(room);
+      if (room.gameState) {
+        const view = createPlayerView(room.gameState, pid);
+        sendTo(ws, { type: 'reconnected', gameState: view });
+        scheduleAfkTimer(room, room.gameState);
       }
       break;
     }
 
     case 'leave_game': {
-      const roomCode = playerRooms.get(ws);
-      if (!roomCode) return;
-      const room = rooms.get(roomCode);
+      const loc = getLocation(ws);
+      if (!loc) return;
+      const room = await store.get(loc.roomCode);
       if (!room || !room.gameState || room.gameState.phase === 'gameOver') return;
-      const playerId = getPlayerId(ws);
-      if (!playerId) return;
-      // Cancel any pending disconnect timer — we're forfeiting immediately
+      const playerId = loc.playerId;
       const dt = playerDisconnectTimers.get(playerId);
       if (dt) { clearTimeout(dt); playerDisconnectTimers.delete(playerId); }
       room.gameState = forfeitGame(room.gameState, playerId);
       room.status = 'finished';
       touchRoom(room);
-      clearAfkTimer(roomCode);
+      await store.set(room);
+      clearAfkTimer(loc.roomCode);
       broadcastPlayerViews(room, room.gameState, 'game_update');
-      setTimeout(() => rooms.delete(roomCode), ROOM_CLEANUP_AFTER_GAME_MS);
+      setTimeout(() => { void store.delete(loc.roomCode); }, ROOM_CLEANUP_AFTER_GAME_MS);
       break;
     }
 
     case 'play_card': {
-      const roomCode = playerRooms.get(ws);
-      if (!roomCode) return;
-      const room = rooms.get(roomCode);
+      const loc = getLocation(ws);
+      if (!loc) return;
+      const room = await store.get(loc.roomCode);
       if (!room || !room.gameState) return;
 
-      const playerId = getPlayerId(ws);
+      const playerId = loc.playerId;
       const currentPlayer = room.gameState.players[room.gameState.currentPlayerIndex];
       if (currentPlayer.id !== playerId) {
         sendTo(ws, { type: 'error', message: 'Not your turn', code: 'NOT_YOUR_TURN' });
         return;
       }
 
-      // Look up card by id from the player's actual hand (prevents spoofing)
       const card = room.gameState.players
         .find(p => p.id === playerId)
         ?.hand.find(c => c.id === data.cardId);
@@ -399,26 +507,39 @@ function handleMessage(ws: WebSocket, data: ClientMessage) {
         return;
       }
 
+      if (!isLegalPlay(room.gameState, playerId, card, room.strictFollowSuit === true)) {
+        sendTo(ws, { type: 'error', message: 'You must follow suit', code: 'INVALID_CARD' });
+        return;
+      }
+
       const newState = playCard(room.gameState, playerId, card);
       room.gameState = newState;
       touchRoom(room);
+      await store.set(room);
 
       if (newState.phase === 'trickComplete') {
-        clearAfkTimer(roomCode);
+        clearAfkTimer(loc.roomCode);
         broadcastPlayerViews(room, newState, 'game_update');
 
-        setTimeout(() => {
-          if (room.gameState && room.gameState.phase === 'trickComplete') {
-            room.gameState = completeTrick(room.gameState);
-            touchRoom(room);
-            broadcastPlayerViews(room, room.gameState, 'game_update');
+        setTimeout(async () => {
+          try {
+            const r = await store.get(loc.roomCode);
+            if (r?.gameState && r.gameState.phase === 'trickComplete') {
+              r.gameState = completeTrick(r.gameState);
+              touchRoom(r);
+              await store.set(r);
+              broadcastPlayerViews(r, r.gameState, 'game_update');
 
-            if (room.gameState.phase === 'gameOver') {
-              room.status = 'finished';
-              setTimeout(() => rooms.delete(roomCode), ROOM_CLEANUP_AFTER_GAME_MS);
-            } else {
-              scheduleAfkTimer(room, room.gameState);
+              if (r.gameState.phase === 'gameOver') {
+                r.status = 'finished';
+                await store.set(r);
+                setTimeout(() => { void store.delete(loc.roomCode); }, ROOM_CLEANUP_AFTER_GAME_MS);
+              } else {
+                scheduleAfkTimer(r, r.gameState);
+              }
             }
+          } catch (err) {
+            log.error({ err }, 'trick-advance error');
           }
         }, TRICK_DISPLAY_MS);
       } else {
@@ -446,9 +567,11 @@ function createPlayerView(state: GameState, playerId: string): GameState {
   return view;
 }
 
-export function getPublicRooms(): PublicRoomInfo[] {
+export async function getPublicRooms(): Promise<PublicRoomInfo[]> {
+  const store = getRoomStore();
+  const all = await store.list();
   const result: PublicRoomInfo[] = [];
-  for (const room of rooms.values()) {
+  for (const room of all) {
     if (room.isPublic && room.status === 'waiting' && room.players.length < room.maxPlayers) {
       result.push({
         code: room.code,

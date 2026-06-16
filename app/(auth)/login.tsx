@@ -7,8 +7,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import Colors from '@/shared/constants/colors';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
-import { isAtLeast18, dobToISO } from '@shared/lib/date';
-import { getApiUrl } from '@shared/query-client';
+import { isAtLeast18, dobToISO, formatLocaleDate, getLocaleDatePlaceholder } from '@shared/lib/date';
+import { t } from '@/shared/i18n';
+import { useLanguage } from '@shared/hooks/useLanguage';
+import { translateClerkError } from '@/shared/i18n/clerk-errors';
 
 function GoogleLogo({ size = 20 }: { size?: number }) {
   return (
@@ -27,6 +29,7 @@ export default function LoginScreen() {
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
   const { enableGuestMode } = useGuestMode();
   const router = useRouter();
+  useLanguage(); // subscribe to language changes so t() output updates
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -51,7 +54,7 @@ export default function LoginScreen() {
         router.replace('/(auth)/complete-profile');
       }
     } catch (e: any) {
-      setErrorMsg(e?.errors?.[0]?.message ?? 'Google sign-in failed');
+      setErrorMsg(translateClerkError(e, 'auth.errGoogleFailed'));
     } finally {
       setGoogleLoading(false);
     }
@@ -64,15 +67,15 @@ export default function LoginScreen() {
     try {
       if (isRegistering) {
         if (!firstName.trim() || !lastName.trim()) {
-          setErrorMsg('Please enter your first and last name');
+          setErrorMsg(t('auth.errNameRequired'));
           return;
         }
         if (!dateOfBirth.trim()) {
-          setErrorMsg('Please enter your date of birth (DD/MM/YYYY)');
+          setErrorMsg(t('auth.errDobRequired'));
           return;
         }
         if (!isAtLeast18(dateOfBirth)) {
-          setErrorMsg('You must be at least 18 years old to create an account');
+          setErrorMsg(t('auth.errUnder18'));
           return;
         }
         await signUp!.create({
@@ -88,11 +91,11 @@ export default function LoginScreen() {
         if (result.status === 'complete') {
           await setSignInActive!({ session: result.createdSessionId });
         } else {
-          setErrorMsg('Sign-in could not be completed. Please try again.');
+          setErrorMsg(t('auth.errSignInIncomplete'));
         }
       }
     } catch (e: any) {
-      setErrorMsg(e?.errors?.[0]?.message ?? 'Authentication failed');
+      setErrorMsg(translateClerkError(e, 'auth.errAuthFailed'));
     } finally {
       setLoading(false);
     }
@@ -116,7 +119,7 @@ export default function LoginScreen() {
         router.replace('/(auth)/complete-profile');
       }
     } catch (e: any) {
-      setErrorMsg(e?.errors?.[0]?.message ?? 'Verification failed');
+      setErrorMsg(translateClerkError(e, 'auth.errVerifyFailed'));
     } finally {
       setLoading(false);
     }
@@ -142,7 +145,7 @@ export default function LoginScreen() {
         <MaterialCommunityIcons name="cards-playing" size={56} color={Colors.gold} />
       </View>
       <Text style={styles.title}>Bisca</Text>
-      <Text style={styles.subtitle}>Sign in to track your stats and play online</Text>
+      <Text style={styles.subtitle}>{t('auth.subtitle')}</Text>
 
       {!pendingVerification ? (
         <>
@@ -158,13 +161,13 @@ export default function LoginScreen() {
               ) : (
                 <GoogleLogo size={20} />
               )}
-              <Text style={styles.googleBtnText}>Continue with Google</Text>
+              <Text style={styles.googleBtnText}>{t('auth.continueWithGoogle')}</Text>
             </Pressable>
           )}
 
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
-            <Text style={styles.dividerText}>or</Text>
+            <Text style={styles.dividerText}>{t('auth.or')}</Text>
             <View style={styles.divider} />
           </View>
 
@@ -174,7 +177,7 @@ export default function LoginScreen() {
                 style={styles.input}
                 value={firstName}
                 onChangeText={setFirstName}
-                placeholder="First Name"
+                placeholder={t('auth.firstName')}
                 placeholderTextColor={Colors.textSecondary}
                 autoCapitalize="words"
               />
@@ -182,17 +185,17 @@ export default function LoginScreen() {
                 style={styles.input}
                 value={lastName}
                 onChangeText={setLastName}
-                placeholder="Last Name"
+                placeholder={t('auth.lastName')}
                 placeholderTextColor={Colors.textSecondary}
                 autoCapitalize="words"
               />
               <TextInput
                 style={styles.input}
                 value={dateOfBirth}
-                onChangeText={setDateOfBirth}
-                placeholder="Date of Birth (DD/MM/YYYY)"
+                onChangeText={(v) => setDateOfBirth(formatLocaleDate(v))}
+                placeholder={`${t('auth.dateOfBirth')} (${getLocaleDatePlaceholder()})`}
                 placeholderTextColor={Colors.textSecondary}
-                keyboardType="numbers-and-punctuation"
+                keyboardType="number-pad"
                 maxLength={10}
               />
             </>
@@ -202,7 +205,7 @@ export default function LoginScreen() {
             style={styles.input}
             value={email}
             onChangeText={setEmail}
-            placeholder="Email"
+            placeholder={t('auth.email')}
             placeholderTextColor={Colors.textSecondary}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -211,7 +214,7 @@ export default function LoginScreen() {
             style={styles.input}
             value={password}
             onChangeText={setPassword}
-            placeholder="Password"
+            placeholder={t('auth.password')}
             placeholderTextColor={Colors.textSecondary}
             secureTextEntry
           />
@@ -226,19 +229,19 @@ export default function LoginScreen() {
             {loading ? (
               <ActivityIndicator color={Colors.textDark} />
             ) : (
-              <Text style={styles.primaryBtnText}>{isRegistering ? 'Create Account' : 'Sign In'}</Text>
+              <Text style={styles.primaryBtnText}>{isRegistering ? t('auth.createAccount') : t('auth.signIn')}</Text>
             )}
           </Pressable>
 
           <Pressable onPress={() => { setIsRegistering(!isRegistering); setErrorMsg(''); setEmail(''); setPassword(''); setFirstName(''); setLastName(''); setDateOfBirth(''); }}>
             <Text style={styles.switchText}>
-              {isRegistering ? 'Already have an account? Sign in' : "Don't have an account? Register"}
+              {isRegistering ? t('auth.haveAccountSignIn') : t('auth.noAccountRegister')}
             </Text>
           </Pressable>
 
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
-            <Text style={styles.dividerText}>or</Text>
+            <Text style={styles.dividerText}>{t('auth.or')}</Text>
             <View style={styles.divider} />
           </View>
 
@@ -248,17 +251,17 @@ export default function LoginScreen() {
             disabled={loading}
           >
             <MaterialCommunityIcons name="account-outline" size={18} color={Colors.textSecondary} />
-            <Text style={styles.guestBtnText}>Continue as Guest</Text>
+            <Text style={styles.guestBtnText}>{t('auth.continueAsGuest')}</Text>
           </Pressable>
         </>
       ) : (
         <>
-          <Text style={styles.verifyHint}>Enter the verification code sent to {email}</Text>
+          <Text style={styles.verifyHint}>{t('auth.verifyHint', { email })}</Text>
           <TextInput
             style={styles.input}
             value={verifyCode}
             onChangeText={setVerifyCode}
-            placeholder="Verification code"
+            placeholder={t('auth.verificationCode')}
             placeholderTextColor={Colors.textSecondary}
             keyboardType="number-pad"
           />
@@ -268,7 +271,7 @@ export default function LoginScreen() {
             onPress={handleVerify}
             disabled={loading || !verifyCode}
           >
-            {loading ? <ActivityIndicator color={Colors.textDark} /> : <Text style={styles.primaryBtnText}>Verify</Text>}
+            {loading ? <ActivityIndicator color={Colors.textDark} /> : <Text style={styles.primaryBtnText}>{t('auth.verify')}</Text>}
           </Pressable>
         </>
       )}

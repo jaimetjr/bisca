@@ -3,22 +3,45 @@ import request from 'supertest';
 import type { Server } from 'node:http';
 import { startTestServer, closeServer, createRoom } from './helpers';
 
-// Mock DB and Clerk so the server starts without a real database
+// Mock DB and Clerk so the server starts without a real database.
+// Builder chain returns an empty array at every reasonable terminal node.
+const emptyArray = Promise.resolve([]);
+function makeChain(): Record<string, unknown> {
+  // Chainable builder; "then" makes it awaitable so `await db.select()...` resolves to [].
+  const chain: Record<string, unknown> = {
+    from: () => chain,
+    leftJoin: () => chain,
+    where: () => chain,
+    groupBy: () => chain,
+    orderBy: () => chain,
+    limit: () => emptyArray,
+    then: (onFulfilled: (v: unknown[]) => unknown, onRejected?: (e: unknown) => unknown) =>
+      emptyArray.then(onFulfilled, onRejected),
+  };
+  return chain;
+}
+
+function makeMutationChain(): Record<string, unknown> {
+  // Chainable for update/set/where; awaiting at any point resolves to undefined.
+  const c: Record<string, unknown> = {
+    set: () => c,
+    where: () => c,
+    then: (cb: (v: undefined) => unknown) => Promise.resolve(undefined).then(cb),
+  };
+  return c;
+}
+
 vi.mock('../../server/db', () => ({
   db: {
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([]),
-          orderBy: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }),
-        }),
-      }),
-    }),
+    select: vi.fn(() => makeChain()),
     insert: vi.fn().mockReturnValue({
       values: vi.fn().mockReturnValue({
         onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+        then: (cb: (v: undefined) => unknown) => Promise.resolve(undefined).then(cb),
       }),
     }),
+    update: vi.fn(() => makeMutationChain()),
   },
 }));
 
@@ -97,5 +120,35 @@ describe('Auth-required endpoints', () => {
   it('POST /api/game-history returns 401 without token', async () => {
     const res = await request(server).post('/api/game-history').send({});
     expect(res.status).toBe(401);
+  });
+
+  it('GET /api/achievements returns 401 without token', async () => {
+    const res = await request(server).get('/api/achievements');
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/quests/today returns 401 without token', async () => {
+    const res = await request(server).get('/api/quests/today');
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/quests/claim returns 401 without token', async () => {
+    const res = await request(server).post('/api/quests/claim').send({ questId: 'play_3' });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /api/leaderboard (public)', () => {
+  it('returns 200 with entries array', async () => {
+    const res = await request(server).get('/api/leaderboard');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.entries)).toBe(true);
+    expect(res.body.period).toBe('7d');
+  });
+
+  it('honours ?period=all', async () => {
+    const res = await request(server).get('/api/leaderboard?period=all');
+    expect(res.status).toBe(200);
+    expect(res.body.period).toBe('all');
   });
 });

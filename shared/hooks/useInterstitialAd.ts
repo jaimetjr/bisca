@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
+import { useRewards } from './useRewards';
 
 const AD_UNIT_ID = __DEV__
   ? TestIds.INTERSTITIAL
@@ -20,6 +21,7 @@ export function useInterstitialAd(isPremium: boolean) {
   const isPremiumRef = useRef(isPremium);
   const mountedRef = useRef(true);
   isPremiumRef.current = isPremium;
+  const { consumeSkipPass } = useRewards();
 
   // Stable function reference to create + load the next ad
   const loadNext = useRef(function load() {
@@ -55,10 +57,14 @@ export function useInterstitialAd(isPremium: boolean) {
 
   const showAd = useCallback(async () => {
     if (isPremiumRef.current || Platform.OS === 'web') return;
+    // Honour any rewarded "skip pass" the user earned — non-P2W: this only
+    // skips an interstitial, never alters gameplay or score.
+    const skipped = await consumeSkipPass();
+    if (skipped) return;
     if (adRef.current && isLoadedRef.current) {
       await adRef.current.show();
     }
-  }, []);
+  }, [consumeSkipPass]);
 
   return { showAd };
 }

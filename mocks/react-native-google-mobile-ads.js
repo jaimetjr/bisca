@@ -24,7 +24,20 @@ const AdEventType = {
   CLICKED: 'clicked',
 };
 
+const RewardedAdEventType = {
+  LOADED: 'rewarded_loaded',
+  EARNED_REWARD: 'rewarded_earned',
+};
+
 const InterstitialAd = {
+  createForAdRequest: () => ({
+    addAdEventListener: () => noop,
+    load: noop,
+    show: noopAsync,
+  }),
+};
+
+const RewardedAd = {
   createForAdRequest: () => ({
     addAdEventListener: () => noop,
     load: noop,
@@ -48,4 +61,6 @@ module.exports = {
   BannerAd,
   AdEventType,
   InterstitialAd,
+  RewardedAd,
+  RewardedAdEventType,
 };

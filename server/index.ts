@@ -1,11 +1,14 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
+import helmet from "helmet";
+import pinoHttp from "pino-http";
 import { registerRoutes } from "./routes";
+import { logger } from "./lib/logger";
 import * as fs from "fs";
 import * as path from "path";
 
 const app = express();
-const log = console.log;
+const log = logger;
 declare module "http" {
     interface IncomingMessage {
         rawBody: unknown;
@@ -59,36 +62,24 @@ function setupBodyParsing(app: express.Application) {
 }
 
 function setupRequestLogging(app: express.Application) {
-  app.use((req, res, next) => {
-    const start = Date.now();
-    const path = req.path;
-    let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
-
-    const originalResJson = res.json;
-    res.json = function (bodyJson, ...args) {
-      capturedJsonResponse = bodyJson;
-      return originalResJson.apply(res, [bodyJson, ...args]);
-    };
-
-    res.on("finish", () => {
-      if (!path.startsWith("/api")) return;
-
-      const duration = Date.now() - start;
-
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    });
-
-    next();
-  });
+  app.use(
+    pinoHttp({
+      logger,
+      customLogLevel: (_req, res, err) => {
+        if (err || res.statusCode >= 500) return 'error';
+        if (res.statusCode >= 400) return 'warn';
+        return 'info';
+      },
+      // Only emit one line per request and skip noisy non-API paths.
+      autoLogging: {
+        ignore: (req) => !(req.url ?? '').startsWith('/api'),
+      },
+      serializers: {
+        req: (req) => ({ method: req.method, url: req.url }),
+        res: (res) => ({ statusCode: res.statusCode }),
+      },
+    }),
+  );
 }
 
 function getAppName(): string {
@@ -142,8 +133,7 @@ function serveLandingPage({
   const baseUrl = `${protocol}://${host}`;
   const expsUrl = `${host}`;
 
-  log(`baseUrl`, baseUrl);
-  log(`expsUrl`, expsUrl);
+  log.debug({ baseUrl, expsUrl }, 'serving landing page');
 
   const html = landingPageTemplate
     .replace(/BASE_URL_PLACEHOLDER/g, baseUrl)
@@ -164,7 +154,7 @@ function configureExpoAndLanding(app: express.Application) {
   const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
 
-  log("Serving static Expo files with dynamic manifest routing");
+  log.info('Serving static Expo files with dynamic manifest routing');
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api")) {
@@ -195,7 +185,7 @@ function configureExpoAndLanding(app: express.Application) {
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
-  log("Expo routing: Checking expo-platform header on / and /manifest");
+  log.info('Expo routing: checking expo-platform header on / and /manifest');
 }
 
 function setupErrorHandler(app: express.Application) {
@@ -209,7 +199,7 @@ function setupErrorHandler(app: express.Application) {
     const status = error.status || error.statusCode || 500;
     const message = error.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    logger.error({ err }, 'internal server error');
 
     if (res.headersSent) {
       return next(err);
@@ -220,6 +210,12 @@ function setupErrorHandler(app: express.Application) {
 }
 
 (async () => {
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Expo landing page uses inline assets; revisit when CSP is hardened
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
@@ -232,6 +228,6 @@ function setupErrorHandler(app: express.Application) {
 
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen(port, "0.0.0.0", () => {
-    log(`express server serving on port ${port}`);
+    log.info({ port }, 'express server listening');
   });
 })();

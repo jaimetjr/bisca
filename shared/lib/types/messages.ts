@@ -11,19 +11,19 @@ export interface PublicRoomInfo {
 }
 
 export type ClientMessage =
-  | { type: 'create_room'; playerName: string; maxPlayers: number; isPublic?: boolean; clerkToken?: string }
+  | { type: 'create_room'; playerName: string; maxPlayers: number; isPublic?: boolean; strictFollowSuit?: boolean; clerkToken?: string }
   | { type: 'join_room'; roomCode: string; playerName: string; preferredTeam?: 0 | 1; clerkToken?: string }
   | { type: 'switch_team'; team: 0 | 1 }
   | { type: 'start_game' }
   | { type: 'play_card'; cardId: string }
-  | { type: 'reconnect'; playerId: string }
+  | { type: 'reconnect'; playerId: string; reconnectToken?: string }
   | { type: 'leave_game' };
 
 // ─── Server → Client ────────────────────────────────────────────────────────
 
 export type ServerMessage =
-  | { type: 'room_created'; roomCode: string; playerId: string; players: RoomPlayerInfo[]; maxPlayers: number }
-  | { type: 'room_joined'; roomCode: string; playerId: string; players: RoomPlayerInfo[]; maxPlayers: number }
+  | { type: 'room_created'; roomCode: string; playerId: string; reconnectToken: string; players: RoomPlayerInfo[]; maxPlayers: number }
+  | { type: 'room_joined'; roomCode: string; playerId: string; reconnectToken: string; players: RoomPlayerInfo[]; maxPlayers: number }
   | { type: 'player_joined'; players: RoomPlayerInfo[] }
   | { type: 'player_left'; players: RoomPlayerInfo[] }
   | { type: 'game_start'; gameState: GameState; playerId: string }
@@ -46,6 +46,9 @@ export type ErrorCode =
   | 'NOT_YOUR_TURN'
   | 'AUTH_REQUIRED'
   | 'INVALID_MESSAGE'
+  | 'INVALID_TOKEN'
   | 'NEED_MORE_PLAYERS'
   | 'NOT_HOST'
-  | 'HOST_LEFT';
+  | 'HOST_LEFT'
+  | 'RATE_LIMITED'
+  | 'FORBIDDEN_ORIGIN';

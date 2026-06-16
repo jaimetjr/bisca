@@ -48,6 +48,9 @@ function DealAnimatedCard({ children, index, isNew }: { children: React.ReactNod
       delay: index * DEAL_ANIMATION_STAGGER_MS,
       useNativeDriver: true,
     }).start();
+    // Run once on mount: animRef is a ref (stable), and re-running for index
+    // or isNew changes mid-animation would visibly stutter the deal-in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const translateY = animRef.interpolate({ inputRange: [0, 1], outputRange: [80, 0] });
@@ -95,6 +98,7 @@ export default function GameScreen() {
   const trickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTokenRef = useRef('');
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const afkCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -151,7 +155,7 @@ export default function GameScreen() {
         // New connection — must re-register with server once open
         ws.onopen = () => {
           setIsReconnecting(true);
-          sendWsMessage({ type: 'reconnect', playerId });
+          sendWsMessage({ type: 'reconnect', playerId, reconnectToken: reconnectTokenRef.current });
         };
       }
 
@@ -227,6 +231,7 @@ export default function GameScreen() {
         setMyId(pid);
         setGameState(state);
         const stored = takeGameWs();
+        if (stored?.reconnectToken) reconnectTokenRef.current = stored.reconnectToken;
         connectOnlineWebSocket(pid, stored?.ws);
       } catch {
         router.replace('/');

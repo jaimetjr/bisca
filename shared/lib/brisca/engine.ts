@@ -84,6 +84,41 @@ export function determineTrickWinner(trick: TrickCard[], trumpSuit: Suit | null)
   return winnerId;
 }
 
+/**
+ * Returns the set of cards a player is allowed to play next under the strict
+ * "must follow suit" rule. If they're leading, every card is legal. Otherwise
+ * they must play a card matching the lead suit if they have one; if they don't
+ * have any, every card is legal.
+ *
+ * Pure — does not mutate state.
+ */
+export function legalCards(state: GameState, playerId: string): Card[] {
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player) return [];
+  if (state.currentTrick.length === 0) return [...player.hand];
+  const leadSuit = state.currentTrick[0].card.suit;
+  const followCards = player.hand.filter((c) => c.suit === leadSuit);
+  return followCards.length > 0 ? followCards : [...player.hand];
+}
+
+/**
+ * Validates a play. When `strictFollowSuit` is false, only hand membership
+ * is required (current behaviour). When true, the card must also be in the
+ * player's `legalCards`.
+ */
+export function isLegalPlay(
+  state: GameState,
+  playerId: string,
+  card: Card,
+  strictFollowSuit: boolean,
+): boolean {
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player) return false;
+  if (!player.hand.some((c) => c.id === card.id)) return false;
+  if (!strictFollowSuit) return true;
+  return legalCards(state, playerId).some((c) => c.id === card.id);
+}
+
 export function playCard(state: GameState, playerId: string, card: Card): GameState {
   const newState = JSON.parse(JSON.stringify(state)) as GameState;
   const playerIndex = newState.players.findIndex(p => p.id === playerId);
