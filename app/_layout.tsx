@@ -2,49 +2,53 @@ import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
-import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
-import * as SecureStore from 'expo-secure-store';
 import { View, Platform } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import mobileAds from 'react-native-google-mobile-ads';
 import Colors from '@/shared/constants/colors';
+import { AuthProvider, useAuth } from '@shared/hooks/useAuth';
 import { GuestModeProvider, useGuestMode } from '@shared/hooks/useGuestMode';
 import { LanguageProvider } from '@shared/hooks/useLanguage';
 import { queryClient } from '@/shared/query-client';
 import { EntitlementProvider } from '@shared/hooks/useEntitlement';
 import { RewardsProvider } from '@shared/hooks/useRewards';
 
-// Initialize AdMob once on startup (no-op on web)
+// Initialize AdMob once on startup (no-op on web). Register test devices FIRST
+// so that even with real ad-unit IDs, our own devices keep getting TEST ads —
+// showing/clicking real ads on your own build can get the AdMob account banned.
+// Emulators are covered by 'EMULATOR'; add a real phone's id via
+// EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS (comma-separated; the SDK logs the id on
+// first ad request).
 if (Platform.OS !== 'web') {
-  mobileAds().initialize().catch(() => {});
+  const testDeviceIdentifiers = [
+    'EMULATOR',
+    ...(process.env.EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  ];
+  (async () => {
+    try {
+      await mobileAds().setRequestConfiguration({ testDeviceIdentifiers });
+    } catch {}
+    try {
+      await mobileAds().initialize();
+    } catch {}
+  })();
 }
 
-const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '';
-
-const tokenCache = {
-  async getToken(key: string) {
-    try { return await SecureStore.getItemAsync(key); } catch { return null; }
-  },
-  async saveToken(key: string, value: string) {
-    try { await SecureStore.setItemAsync(key, value); } catch {}
-  },
-  async clearToken(key: string) {
-    try { await SecureStore.deleteItemAsync(key); } catch {}
-  },
-};
-
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isLoaded: clerkLoaded, isSignedIn } = useAuth();
+  const { isLoaded: authLoaded, isSignedIn, emailVerified } = useAuth();
   const { isGuest, isLoaded: guestLoaded } = useGuestMode();
   const segments = useSegments();
   const router = useRouter();
 
   const segs = segments as string[];
   const inAuthGroup = segs[0] === '(auth)';
-  const onLoginScreen = segs[1] === 'login';
+  const onVerifyScreen = segs[1] === 'verify-email';
 
   useEffect(() => {
-    if (!clerkLoaded || !guestLoaded) return;
+    if (!authLoaded || !guestLoaded) return;
 
     // Unauthenticated, non-guest user outside auth screens → go to login
     if (!isSignedIn && !isGuest && !inAuthGroup) {
@@ -52,18 +56,18 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Guest just enabled while still on auth screen → go home
-    if (isGuest && inAuthGroup) {
-      router.replace('/');
+    // Hard email-verification gate: signed in but unverified → verify screen,
+    // and block everything else until verified.
+    if (isSignedIn && !emailVerified) {
+      if (!onVerifyScreen) router.replace('/(auth)/verify-email');
       return;
     }
 
-    // Signed-in user on login screen → always go through complete-profile
-    // (complete-profile will redirect home immediately if profile already exists)
-    if (isSignedIn && inAuthGroup && onLoginScreen) {
-      router.replace('/(auth)/complete-profile');
+    // Verified user or guest still on an auth screen → go home
+    if ((isSignedIn || isGuest) && inAuthGroup) {
+      router.replace('/');
     }
-  }, [isSignedIn, clerkLoaded, guestLoaded, isGuest, inAuthGroup, onLoginScreen, router]);
+  }, [isSignedIn, emailVerified, authLoaded, guestLoaded, isGuest, inAuthGroup, onVerifyScreen, router]);
 
   return <>{children}</>;
 }
@@ -74,7 +78,7 @@ function AppWithEntitlement() {
     <EntitlementProvider userId={userId}>
       <RewardsProvider>
         <AuthGuard>
-          <StatusBar style="light" backgroundColor="#000000" />
+          <StatusBar style="light" backgroundColor={Colors.backgroundDark} />
           <Stack screenOptions={{ headerShown: false }} />
         </AuthGuard>
       </RewardsProvider>
@@ -98,9 +102,9 @@ export default function RootLayout() {
     <LanguageProvider>
       <QueryClientProvider client={queryClient}>
         <GuestModeProvider>
-          <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+          <AuthProvider>
             <AppWithEntitlement />
-          </ClerkProvider>
+          </AuthProvider>
         </GuestModeProvider>
       </QueryClientProvider>
     </LanguageProvider>

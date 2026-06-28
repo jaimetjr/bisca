@@ -2,7 +2,12 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { Platform } from 'react-native';
 import Purchases, { PurchasesPackage, CustomerInfoUpdateListener } from 'react-native-purchases';
 
-const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
+// Platform-specific public SDK keys from the RevenueCat dashboard. Empty when
+// not configured (e.g. ads-only builds) — the provider skips setup in that case.
+const REVENUECAT_API_KEY =
+  (Platform.OS === 'ios'
+    ? process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS
+    : process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID) ?? '';
 
 /** The entitlement identifier configured in RevenueCat dashboard */
 export const REMOVE_ADS_ENTITLEMENT = 'remove_ads';

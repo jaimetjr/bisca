@@ -50,6 +50,7 @@ const BannerAd = () => null;
 
 const mobileAds = () => ({
   initialize: noopAsync,
+  setRequestConfiguration: noopAsync,
 });
 
 module.exports = {
