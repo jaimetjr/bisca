@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Platform } from 'react-native';
-import Purchases, { PurchasesPackage } from 'react-native-purchases';
+import Purchases, { PurchasesPackage, CustomerInfoUpdateListener } from 'react-native-purchases';
 
 const REVENUECAT_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
 
@@ -31,7 +31,10 @@ export function EntitlementProvider({ userId, children }: EntitlementProviderPro
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
+    // No RevenueCat key configured (e.g. ad-only / sandbox test builds): skip
+    // setup entirely. The native SDK throws a fatal "API key must be set"
+    // exception on an empty key, which would crash the app on launch.
+    if (Platform.OS === 'web' || !REVENUECAT_API_KEY) {
       setLoading(false);
       return;
     }
@@ -50,12 +53,13 @@ export function EntitlementProvider({ userId, children }: EntitlementProviderPro
       })
       .finally(() => setLoading(false));
 
-    const removeListener = Purchases.addCustomerInfoUpdateListener(info => {
+    const onCustomerInfo: CustomerInfoUpdateListener = info => {
       setIsPremium(REMOVE_ADS_ENTITLEMENT in info.entitlements.active);
-    });
+    };
+    Purchases.addCustomerInfoUpdateListener(onCustomerInfo);
 
     return () => {
-      if (typeof removeListener === 'function') removeListener();
+      Purchases.removeCustomerInfoUpdateListener(onCustomerInfo);
     };
   }, [userId]);
 

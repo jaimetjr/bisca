@@ -10,6 +10,7 @@ const Purchases = {
   purchasePackage: async () => ({ customerInfo: emptyCustomerInfo }),
   restorePurchases: async () => emptyCustomerInfo,
   addCustomerInfoUpdateListener: () => () => {},
+  removeCustomerInfoUpdateListener: () => {},
 };
 
 module.exports = {

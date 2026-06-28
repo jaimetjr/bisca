@@ -1,107 +1,99 @@
-# Monetization Sandbox Testing — Design
+# Adding Ads to the App — Simple Step-by-Step
 
 **Date:** 2026-06-27
-**Goal:** Test real in-app purchases (RevenueCat `remove_ads`) and AdMob ads on **Android**, end-to-end, using Google Play's sandbox — without getting your AdMob account banned and without blocking on accounts you don't have yet.
+**Platform:** Android first (iOS later, same idea).
 
-**Approach:** Phased. Make the code and build ready *now* (works in Expo Go for gating logic), then do the Google Play store setup once your Play Console account is verified.
+## The one thing to understand first
 
----
+**Ads do NOT show in Expo Go, and they do NOT show in a `development` (dev-client)
+build run from `npm start` either.** `metro.config.js` swaps the real ad/purchase
+native modules for fake "mock" versions whenever `EAS_BUILD` is not set — and that
+is the case both in Expo Go and on your local Metro server. The mocks render no
+ads and (until fixed) crash on the purchases listener.
 
-## What already exists (no work needed)
+To actually see ads you need a build whose JavaScript was bundled **on the EAS
+servers** (where `EAS_BUILD=true`), so the real modules are used. The simplest
+such build is the **`preview`** profile: it produces a standalone APK that runs
+on its own, with no Metro connection.
 
-- RevenueCat + AdMob accounts.
-- Ad code: banner (`app/index.tsx`), interstitial (`shared/hooks/useInterstitialAd.ts`), rewarded (`shared/hooks/useRewardedAd.ts`) — all use Google test ad IDs in dev.
-- IAP code: `remove_ads` entitlement (`shared/hooks/useEntitlement.ts`) + buy/restore UI (`app/settings.tsx`).
-- `eas.json` with `development` / `preview` / `production` build profiles.
-- `metro.config.js` mocks the native modules in Expo Go/web and uses the real ones in EAS builds.
-
-## What's missing (the work)
-
-1. RevenueCat uses one combined key; it needs **separate Android/iOS keys**.
-2. **No AdMob test-device registration** — a release build would show you *real* ads, which can get the account banned.
-3. `.env.example` is missing most monetization variables.
-4. No quick way to check premium gating without a full build.
-5. Google Play Console account + first EAS build don't exist yet.
+In that build, with no ad-unit IDs configured yet, the code falls back to
+Google's official **TEST** ad units automatically — so you see real test ads
+(they say "Test Ad") with zero AdMob console setup.
 
 ---
 
-## The three test layers (fast → real)
+## Part 1 — See a test ad (start here)
 
-| Layer | Where | Needs accounts? | Proves |
-|------|-------|-----------------|--------|
-| 1. Logic | Expo Go / web | No | Premium state hides ads + shows premium UI |
-| 2. Build | EAS build on a device | No | Real modules load; ads show as **Test Ads** |
-| 3. Store sandbox | Play internal track | Yes (Play Console) | A real sandbox purchase flips the entitlement |
+**Goal:** a visible ad in your app on an Android device/emulator.
 
----
+1. **AdMob App ID is already wired for testing.**
+   `eas.json` → `preview` profile sets `ADMOB_APP_ID_ANDROID` to Google's sample
+   App ID (`ca-app-pub-3940256099942544~3347511713`). That's enough to see test
+   ads. Replace it with your real App ID (from AdMob → App settings) before
+   Part 2 — no rush.
 
-## Phase 1 — Code & build ready (do now)
+2. **Install the build tool.**
+   ```
+   npm install -g eas-cli
+   eas login          # create a free Expo account if you don't have one
+   ```
 
-### Step 1 — Split the RevenueCat key
-In `shared/hooks/useEntitlement.ts`, replace the single `EXPO_PUBLIC_REVENUECAT_API_KEY` with platform-specific keys and pick by platform:
+3. **Build the standalone preview app for Android.**
+   ```
+   eas build --profile preview --platform android
+   ```
+   Wait ~10–15 min. When it finishes, install the resulting **.apk** on your
+   phone (scan the QR / download it) or drag it onto an Android emulator.
+   You do NOT run `npm start` for this build — it runs on its own.
 
-- `EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID`
-- `EXPO_PUBLIC_REVENUECAT_API_KEY_IOS`
+4. **Open the app.**
+   You should see a banner that says **"Test Ad"** on the home screen, and the
+   rewarded-ad button should work.
 
-### Step 2 — Register your test device for ads
-In `app/_layout.tsx`, before `mobileAds().initialize()`, call `setRequestConfiguration({ testDeviceIdentifiers })`, reading IDs from a new `EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS` (comma-separated). This guarantees that even release builds show test-flagged ads on your device.
+**Done = you can see a Test Ad in the app.** That's the whole initial part.
 
-> How to get the device ID: run the app once; the AdMob SDK logs your device's test ID in the console. Paste it into the env var.
-
-### Step 3 — Add a dev-only "force premium" toggle
-Add a hidden debug switch in `app/settings.tsx` (visible only when `__DEV__`) that forces `isPremium = true` in `useEntitlement.ts`. Lets you verify gating live with no rebuild. It can never turn on in a production build.
-
-### Step 4 — Document the env vars
-Add all monetization variables to `.env.example` with comments:
-- `EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID`, `EXPO_PUBLIC_REVENUECAT_API_KEY_IOS`
-- `ADMOB_APP_ID_ANDROID`, `ADMOB_APP_ID_IOS`
-- `EXPO_PUBLIC_ADMOB_BANNER_ANDROID`, `EXPO_PUBLIC_ADMOB_INTERSTITIAL_ANDROID`, `EXPO_PUBLIC_ADMOB_REWARDED_ANDROID` (and iOS equivalents)
-- `EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS`
-
-### Step 5 — Put the env vars into EAS
-Register the same variables as EAS environment variables (so `EXPO_PUBLIC_*` and `app.config.js` resolve at build time).
-
-### Step 6 — Build once and check Layer 2
-Run an Android EAS build, install it on your device, and confirm:
-- The app launches and RevenueCat configures (no crash).
-- Ads appear with the yellow **"Test Ad"** label.
+> Why not the `development` profile? A dev-client build loads its JS from your
+> local `npm start`, where `EAS_BUILD` is unset, so Metro serves the **mocks** and
+> you see no ads. The `preview` build bundles its JS on EAS (real modules), so it
+> shows ads. (Fast dev iteration with real ads is possible by running
+> `EAS_BUILD=true` before `npm start` with a dev-client build — but `preview` is
+> the simplest way to just confirm ads work.)
 
 ---
 
-## Phase 2 — Google Play sandbox (do when Play Console is verified)
+## Part 2 — Use your own ad units (after Part 1 works)
 
-### Step 7 — Create the Play Console account
-Pay the one-time $25, start identity verification (can take a few days). Create the app entry with your final package name.
+Only do this once Part 1 shows test ads.
 
-### Step 8 — Create the in-app product
-Create the product(s) in Play Console with IDs that match your RevenueCat offering, and confirm they're attached to the `remove_ads` entitlement in RevenueCat.
-
-### Step 9 — Add license testers
-Play Console → License testing → add your tester Google account(s). These accounts get sandbox (free) purchases.
-
-### Step 10 — Upload to internal testing
-`eas build` an Android **AAB**, upload it to the **internal testing** track, and opt in via the test link. Install the app *from Google Play* (this is required for billing to work).
-
-### Step 11 — Run the real test (Layer 3)
-As a license tester:
-1. Buy "Remove Ads" → confirm `isPremium` flips and all ads disappear.
-2. Reinstall the app → tap **Restore** → confirm premium comes back.
+1. In AdMob, create ad units for your app: **banner**, **interstitial**,
+   **rewarded**. Copy each unit ID (`ca-app-pub-...../.....`).
+2. Put them in the app's environment variables (the `EXPO_PUBLIC_ADMOB_*_ANDROID`
+   names already used in the code; add the missing ones to `.env.example`).
+3. **Register your device as a test device** so a release build still shows
+   test ads on your phone (showing/clicking your *real* ads yourself can get the
+   AdMob account banned). The SDK prints your device's test ID in the logs on the
+   first ad — add it to `EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS`.
 
 ---
 
-## Deliverable
+## Part 3 — Later: the "Remove Ads" purchase (separate effort)
 
-A runbook in `docs/` (checklist form) covering all steps above, so the Android flow can be repeated for iOS later. It replaces the monetization notes scattered in `TODO.md`.
+This is the in-app purchase side (RevenueCat `remove_ads`) and is a bigger,
+account-heavy job. It needs a **Google Play Console** account ($25, plus a few
+days for ID verification) and real Play sandbox testing. Outline:
 
-## Acceptance criteria
+- Split the single RevenueCat key into Android/iOS keys in
+  `shared/hooks/useEntitlement.ts`.
+- Add a dev-only "force premium" toggle to check that ads hide when premium.
+- Create the in-app product in Play Console, add license testers, upload an
+  AAB to the internal testing track, and make a real sandbox purchase.
 
-- **Layer 1:** force-premium ON hides banner + interstitial + rewarded and shows "Premium active"; OFF brings ads + buy buttons back.
-- **Layer 2:** EAS build runs; RevenueCat configures with the Android key; ads carry the **Test Ad** label.
-- **Layer 3 (later):** a sandbox purchase flips the entitlement and survives reinstall via Restore.
+Do this only after ads (Parts 1–2) are working.
+
+---
 
 ## Out of scope (not now)
 
-- iOS sandbox (later phase, same steps).
-- Production launch / store review / the new-account "20 testers for 14 days" rule.
-- Automated tests for purchases (the existing mocks already cover unit logic).
+- iOS (same steps, later).
+- Production launch / store review.
 - Server-side receipt validation / RevenueCat webhooks.
