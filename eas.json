@@ -14,11 +14,20 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "ADMOB_APP_ID_ANDROID": "ca-app-pub-3940256099942544~3347511713"
+        "ADMOB_APP_ID_ANDROID": "ca-app-pub-9412542080032324~2646223135",
+        "EXPO_PUBLIC_ADMOB_BANNER_ANDROID": "ca-app-pub-9412542080032324/5595774317",
+        "EXPO_PUBLIC_ADMOB_INTERSTITIAL_ANDROID": "ca-app-pub-9412542080032324/2641096461",
+        "EXPO_PUBLIC_ADMOB_REWARDED_ANDROID": "ca-app-pub-9412542080032324/7118141913"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "ADMOB_APP_ID_ANDROID": "ca-app-pub-9412542080032324~2646223135",
+        "EXPO_PUBLIC_ADMOB_BANNER_ANDROID": "ca-app-pub-9412542080032324/5595774317",
+        "EXPO_PUBLIC_ADMOB_INTERSTITIAL_ANDROID": "ca-app-pub-9412542080032324/2641096461",
+        "EXPO_PUBLIC_ADMOB_REWARDED_ANDROID": "ca-app-pub-9412542080032324/7118141913"
+      }
     }
   },
   "submit": {
