@@ -14,6 +14,11 @@ const AD_UNIT_ID = __DEV__
       android: process.env.EXPO_PUBLIC_ADMOB_REWARDED_ANDROID,
     }) ?? TestIds.REWARDED;
 
+/** Max consecutive failed loads to retry before giving up until remount/show. */
+const MAX_LOAD_RETRIES = 3;
+/** Base backoff between retries; doubled each attempt (4s → 8s → 16s). */
+const BASE_RETRY_DELAY_MS = 4000;
+
 interface UseRewardedAdOptions {
   /** Called once the user completes the ad and qualifies for the reward. */
   onEarned: () => void;
@@ -40,12 +45,19 @@ export function useRewardedAd({ onEarned, disabled = false }: UseRewardedAdOptio
   const onEarnedRef = useRef(onEarned);
   const disabledRef = useRef(disabled);
   const mountedRef = useRef(true);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   onEarnedRef.current = onEarned;
   disabledRef.current = disabled;
 
   const loadNext = useRef(function load() {
     if (disabledRef.current || Platform.OS === 'web' || !mountedRef.current) return;
+    // Cancel any pending retry so we never run two loads in parallel.
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     setIsLoaded(false);
 
     const ad = RewardedAd.createForAdRequest(AD_UNIT_ID, {
@@ -53,6 +65,7 @@ export function useRewardedAd({ onEarned, disabled = false }: UseRewardedAdOptio
     });
 
     ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+      retryCountRef.current = 0;
       if (mountedRef.current) setIsLoaded(true);
     });
 
@@ -73,7 +86,16 @@ export function useRewardedAd({ onEarned, disabled = false }: UseRewardedAdOptio
     ad.addAdEventListener(AdEventType.ERROR, () => {
       if (mountedRef.current) setIsLoaded(false);
       adRef.current = null;
-      // Don't infinite-loop on errors — the next user-triggered load will retry.
+      // Bounded retry with exponential backoff: a transient failure (no fill,
+      // flaky network) recovers on its own, but we stop after MAX_LOAD_RETRIES
+      // so a persistent error never turns into an infinite request loop.
+      if (!mountedRef.current || retryCountRef.current >= MAX_LOAD_RETRIES) return;
+      const delay = BASE_RETRY_DELAY_MS * 2 ** retryCountRef.current;
+      retryCountRef.current += 1;
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        loadNext.current();
+      }, delay);
     });
 
     adRef.current = ad;
@@ -86,6 +108,10 @@ export function useRewardedAd({ onEarned, disabled = false }: UseRewardedAdOptio
     return () => {
       mountedRef.current = false;
       adRef.current = null;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -93,7 +119,12 @@ export function useRewardedAd({ onEarned, disabled = false }: UseRewardedAdOptio
     if (disabledRef.current || Platform.OS === 'web') return;
     if (adRef.current && isLoaded) {
       await adRef.current.show();
+      return;
     }
+    // Not loaded (e.g. retries exhausted): kick a fresh load so a manual
+    // retry path has something to show next time.
+    retryCountRef.current = 0;
+    loadNext.current();
   }, [isLoaded]);
 
   return { isLoaded, showAd };

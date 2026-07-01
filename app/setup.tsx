@@ -8,7 +8,7 @@ import Colors from '@/shared/constants/colors';
 import { t } from '@/shared/i18n';
 import { PLAYER_NAME_MAX_LENGTH } from '@/shared/constants/game';
 import { useSettings } from '@/shared/hooks/useSettings';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import { useQuery } from '@tanstack/react-query';

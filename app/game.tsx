@@ -27,7 +27,7 @@ import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { useSettings } from '@/shared/hooks/useSettings';
 import { takeGameWs } from '@/shared/ws-store';
 import { useLanguage } from '@shared/hooks/useLanguage';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEntitlement } from '@shared/hooks/useEntitlement';

@@ -11,8 +11,8 @@ export interface PublicRoomInfo {
 }
 
 export type ClientMessage =
-  | { type: 'create_room'; playerName: string; maxPlayers: number; isPublic?: boolean; strictFollowSuit?: boolean; clerkToken?: string }
-  | { type: 'join_room'; roomCode: string; playerName: string; preferredTeam?: 0 | 1; clerkToken?: string }
+  | { type: 'create_room'; playerName: string; maxPlayers: number; isPublic?: boolean; strictFollowSuit?: boolean }
+  | { type: 'join_room'; roomCode: string; playerName: string; preferredTeam?: 0 | 1 }
   | { type: 'switch_team'; team: 0 | 1 }
   | { type: 'start_game' }
   | { type: 'play_card'; cardId: string }

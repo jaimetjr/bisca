@@ -7,6 +7,7 @@ var __export = (target, all) => {
 // server/index.ts
 import express from "express";
 import helmet from "helmet";
+import pinoHttp from "pino-http";
 
 // server/routes.ts
 import { createServer } from "node:http";
@@ -148,6 +149,21 @@ function determineTrickWinner(trick, trumpSuit) {
   }
   return winnerId;
 }
+function legalCards(state, playerId2) {
+  const player = state.players.find((p) => p.id === playerId2);
+  if (!player) return [];
+  if (state.currentTrick.length === 0) return [...player.hand];
+  const leadSuit = state.currentTrick[0].card.suit;
+  const followCards = player.hand.filter((c) => c.suit === leadSuit);
+  return followCards.length > 0 ? followCards : [...player.hand];
+}
+function isLegalPlay(state, playerId2, card, strictFollowSuit) {
+  const player = state.players.find((p) => p.id === playerId2);
+  if (!player) return false;
+  if (!player.hand.some((c) => c.id === card.id)) return false;
+  if (!strictFollowSuit) return true;
+  return legalCards(state, playerId2).some((c) => c.id === card.id);
+}
 function playCard(state, playerId2, card) {
   const newState = JSON.parse(JSON.stringify(state));
   const playerIndex = newState.players.findIndex((p) => p.id === playerId2);
@@ -214,21 +230,19 @@ var playerName = z.string().trim().min(1).max(PLAYER_NAME_MAX_LENGTH);
 var roomCode = z.string().trim().length(ROOM_CODE_LENGTH).regex(/^[A-Z2-9]+$/i);
 var playerId = z.string().min(1).max(64).regex(/^[A-Za-z0-9_.-]+$/);
 var cardId = z.string().min(1).max(32).regex(/^[A-Za-z0-9_-]+$/);
-var clerkToken = z.string().max(4096).optional();
 var team = z.union([z.literal(0), z.literal(1)]);
 var createRoomSchema = z.object({
   type: z.literal("create_room"),
   playerName,
   maxPlayers: z.number().int().min(2).max(4),
   isPublic: z.boolean().optional(),
-  clerkToken
+  strictFollowSuit: z.boolean().optional()
 });
 var joinRoomSchema = z.object({
   type: z.literal("join_room"),
   roomCode,
   playerName,
-  preferredTeam: team.optional(),
-  clerkToken
+  preferredTeam: team.optional()
 });
 var switchTeamSchema = z.object({
   type: z.literal("switch_team"),
@@ -349,6 +363,16 @@ var messageLimiter = createObjectRateLimiter({
   refillPerMs: msgPer10s / 1e4
 });
 
+// server/lib/logger.ts
+import pino from "pino";
+var isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+var level = process.env.LOG_LEVEL ?? (isTest ? "silent" : "info");
+var logger = pino({
+  level,
+  base: { service: "bisca-server" },
+  timestamp: pino.stdTimeFunctions.isoTime
+});
+
 // server/stores/memory-room-store.ts
 var MemoryRoomStore = class {
   rooms = /* @__PURE__ */ new Map();
@@ -433,6 +457,7 @@ var RedisRoomStore = class {
 
 // server/lib/redis.ts
 import IORedis from "ioredis";
+var log = logger.child({ module: "redis" });
 var client;
 function getRedis() {
   if (client) return client;
@@ -446,22 +471,23 @@ function getRedis() {
     enableReadyCheck: true
   });
   client.on("error", (err) => {
-    console.error("[redis] client error:", err.message);
+    log.error({ err: err.message }, "redis client error");
   });
   return client;
 }
 
 // server/stores/index.ts
+var log2 = logger.child({ module: "room-store" });
 var instance;
 function getRoomStore() {
   if (instance) return instance;
   const kind = (process.env.ROOM_STORE ?? "memory").toLowerCase();
   if (kind === "redis") {
     instance = new RedisRoomStore(getRedis());
-    console.log("[room-store] using Redis backend");
+    log2.info("using Redis backend");
   } else {
     instance = new MemoryRoomStore();
-    console.log("[room-store] using in-memory backend");
+    log2.info("using in-memory backend");
   }
   return instance;
 }
@@ -494,6 +520,7 @@ function getWsForPlayer(playerId2) {
 }
 
 // server/game-rooms.ts
+var log3 = logger.child({ module: "game-rooms" });
 var roomAfkTimers = /* @__PURE__ */ new Map();
 var roomAfkWarnTimers = /* @__PURE__ */ new Map();
 var playerDisconnectTimers = /* @__PURE__ */ new Map();
@@ -525,7 +552,7 @@ setInterval(async () => {
       }
     }
   } catch (err) {
-    console.error("[room-cleanup] error:", err);
+    log3.error({ err }, "room-cleanup error");
   }
 }, 6e4);
 function generateRoomCode() {
@@ -614,7 +641,7 @@ function scheduleAfkTimer(room, state) {
         sendTo(ws, { type: "afk_warning", secondsLeft: AFK_WARNING_MS / 1e3 });
       }
     } catch (err) {
-      console.error("[afk-warn] error:", err);
+      log3.error({ err }, "afk-warn error");
     }
   }, AFK_TIMEOUT_MS - AFK_WARNING_MS));
   roomAfkTimers.set(roomCode2, setTimeout(async () => {
@@ -634,7 +661,7 @@ function scheduleAfkTimer(room, state) {
         void store.delete(roomCode2);
       }, ROOM_CLEANUP_AFTER_GAME_MS);
     } catch (err) {
-      console.error("[afk-forfeit] error:", err);
+      log3.error({ err }, "afk-forfeit error");
     }
   }, AFK_TIMEOUT_MS));
 }
@@ -664,12 +691,12 @@ function handleWebSocket(ws, request) {
       return;
     }
     void handleMessage(ws, result.data).catch((err) => {
-      console.error("[ws-handler] error:", err);
+      log3.error({ err }, "ws-handler error");
       sendTo(ws, { type: "error", message: "Internal error", code: "INVALID_MESSAGE" });
     });
   });
   ws.on("close", () => {
-    void handleClose(ws).catch((err) => console.error("[ws-close] error:", err));
+    void handleClose(ws).catch((err) => log3.error({ err }, "ws-close error"));
   });
 }
 async function handleClose(ws) {
@@ -714,7 +741,7 @@ async function handleClose(ws) {
           void store.delete(loc.roomCode);
         }, ROOM_CLEANUP_AFTER_GAME_MS);
       } catch (err) {
-        console.error("[disconnect-forfeit] error:", err);
+        log3.error({ err }, "disconnect-forfeit error");
       }
     }, DISCONNECT_GRACE_MS));
   }
@@ -742,7 +769,8 @@ async function handleMessage(ws, data) {
           gameState: null,
           status: "waiting",
           isPublic: data.isPublic !== false,
-          lastActivityAt: Date.now()
+          lastActivityAt: Date.now(),
+          strictFollowSuit: data.strictFollowSuit === true
         };
         if (await store.setIfAbsent(candidate)) {
           stored = true;
@@ -919,6 +947,10 @@ async function handleMessage(ws, data) {
         sendTo(ws, { type: "error", message: "Invalid card", code: "INVALID_CARD" });
         return;
       }
+      if (!isLegalPlay(room.gameState, playerId2, card, room.strictFollowSuit === true)) {
+        sendTo(ws, { type: "error", message: "You must follow suit", code: "INVALID_CARD" });
+        return;
+      }
       const newState = playCard(room.gameState, playerId2, card);
       room.gameState = newState;
       touchRoom(room);
@@ -945,7 +977,7 @@ async function handleMessage(ws, data) {
               }
             }
           } catch (err) {
-            console.error("[trick-advance] error:", err);
+            log3.error({ err }, "trick-advance error");
           }
         }, TRICK_DISPLAY_MS);
       } else {
@@ -994,31 +1026,53 @@ import { Pool } from "pg";
 // shared/lib/schema.ts
 var schema_exports = {};
 __export(schema_exports, {
+  authCodes: () => authCodes,
   gameHistory: () => gameHistory,
   insertGameHistorySchema: () => insertGameHistorySchema,
-  insertUserProfileSchema: () => insertUserProfileSchema,
-  userProfiles: () => userProfiles
+  insertUserSchema: () => insertUserSchema,
+  userAchievements: () => userAchievements,
+  userQuestProgress: () => userQuestProgress,
+  users: () => users
 });
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, serial, date } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, serial, date, boolean, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-var userProfiles = pgTable("user_profiles", {
-  id: serial("id").primaryKey(),
-  clerkId: text("clerk_id").notNull().unique(),
+var users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  emailVerified: boolean("email_verified").notNull().default(false),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   dateOfBirth: date("date_of_birth").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
 });
-var insertUserProfileSchema = createInsertSchema(userProfiles).omit({
+var authCodes = pgTable(
+  "auth_codes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: text("user_id").notNull(),
+    purpose: text("purpose").notNull(),
+    // 'email_verify' | 'password_reset'
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+    createdAt: timestamp("created_at").defaultNow()
+  },
+  (t) => ({
+    userPurposeIdx: index("auth_codes_user_purpose_idx").on(t.userId, t.purpose)
+  })
+);
+var insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
   updatedAt: true
 });
 var gameHistory = pgTable("game_history", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  clerkUserId: text("clerk_user_id").notNull(),
+  userId: text("user_id").notNull(),
   result: text("result").notNull(),
   // 'win' | 'loss' | 'draw'
   score: integer("score").notNull(),
@@ -1030,53 +1084,708 @@ var gameHistory = pgTable("game_history", {
   playedAt: timestamp("played_at").defaultNow()
 });
 var insertGameHistorySchema = createInsertSchema(gameHistory).omit({ id: true, playedAt: true });
+var userAchievements = pgTable(
+  "user_achievements",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    achievementId: text("achievement_id").notNull(),
+    unlockedAt: timestamp("unlocked_at").defaultNow()
+  },
+  (t) => ({
+    userIdx: index("user_achievements_user_idx").on(t.userId),
+    uniq: uniqueIndex("user_achievements_unique").on(t.userId, t.achievementId)
+  })
+);
+var userQuestProgress = pgTable(
+  "user_quest_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    questId: text("quest_id").notNull(),
+    questDate: date("quest_date").notNull(),
+    // 'YYYY-MM-DD' UTC
+    progress: integer("progress").notNull().default(0),
+    target: integer("target").notNull(),
+    claimed: boolean("claimed").notNull().default(false),
+    claimedAt: timestamp("claimed_at")
+  },
+  (t) => ({
+    userDateIdx: index("user_quest_progress_user_date_idx").on(t.userId, t.questDate),
+    uniq: uniqueIndex("user_quest_progress_unique").on(t.userId, t.questDate, t.questId)
+  })
+);
 
 // server/db.ts
 var pool = new Pool({ connectionString: process.env.DATABASE_URL });
 var db = drizzle(pool, { schema: schema_exports });
 
 // server/routes.ts
-import { eq, desc, sql as sql2 } from "drizzle-orm";
-import { verifyToken } from "@clerk/backend";
-var CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY ?? "";
+import { eq as eq4, desc as desc3, sql as sql4 } from "drizzle-orm";
+
+// server/lib/auth.ts
+import bcrypt from "bcryptjs";
+import { SignJWT, jwtVerify } from "jose";
+var BCRYPT_ROUNDS = 10;
+var TOKEN_TTL = "30d";
+var cachedSecret = null;
+function getSecret2() {
+  if (cachedSecret) return cachedSecret;
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 16) {
+    throw new Error("JWT_SECRET must be set to a random string of at least 16 characters");
+  }
+  cachedSecret = new TextEncoder().encode(secret);
+  return cachedSecret;
+}
+function hashPassword(plain) {
+  return bcrypt.hash(plain, BCRYPT_ROUNDS);
+}
+function verifyPassword(plain, hash) {
+  return bcrypt.compare(plain, hash);
+}
+function signAuthToken(userId, emailVerified) {
+  return new SignJWT({ ev: emailVerified }).setProtectedHeader({ alg: "HS256" }).setSubject(userId).setIssuedAt().setExpirationTime(TOKEN_TTL).sign(getSecret2());
+}
+async function verifyAuthToken(token) {
+  try {
+    const { payload } = await jwtVerify(token, getSecret2());
+    if (typeof payload.sub !== "string") return null;
+    return { userId: payload.sub, emailVerified: payload.ev === true };
+  } catch {
+    return null;
+  }
+}
+
+// server/lib/auth-codes.ts
+import { randomInt } from "node:crypto";
+import { and, eq, desc, sql as sql2, isNull } from "drizzle-orm";
+var CODE_TTL_MS = 15 * 60 * 1e3;
+var MAX_ATTEMPTS = 5;
+function generateCode() {
+  return String(randomInt(0, 1e6)).padStart(6, "0");
+}
+async function issueCode(userId, purpose) {
+  await db.delete(authCodes).where(
+    and(eq(authCodes.userId, userId), eq(authCodes.purpose, purpose))
+  );
+  const code = generateCode();
+  const codeHash = await hashPassword(code);
+  await db.insert(authCodes).values({
+    userId,
+    purpose,
+    codeHash,
+    expiresAt: new Date(Date.now() + CODE_TTL_MS)
+  });
+  return code;
+}
+async function verifyCode(userId, purpose, code) {
+  const [row] = await db.select().from(authCodes).where(
+    and(
+      eq(authCodes.userId, userId),
+      eq(authCodes.purpose, purpose),
+      isNull(authCodes.consumedAt)
+    )
+  ).orderBy(desc(authCodes.createdAt)).limit(1);
+  if (!row) return { ok: false, reason: "invalid" };
+  if (row.expiresAt.getTime() < Date.now()) return { ok: false, reason: "expired" };
+  if (row.attempts >= MAX_ATTEMPTS) return { ok: false, reason: "too_many_attempts" };
+  const match = await verifyPassword(code, row.codeHash);
+  if (!match) {
+    await db.update(authCodes).set({ attempts: row.attempts + 1 }).where(eq(authCodes.id, row.id));
+    return { ok: false, reason: "invalid" };
+  }
+  await db.update(authCodes).set({ consumedAt: sql2`now()` }).where(eq(authCodes.id, row.id));
+  return { ok: true };
+}
+
+// server/lib/email.ts
+var log4 = logger.child({ module: "email" });
+var RESEND_ENDPOINT = "https://api.resend.com/emails";
+var FROM = process.env.EMAIL_FROM ?? "Bisca <onboarding@resend.dev>";
+var APP_NAME = "Bisca";
+async function sendEmail(to, subject, html, devCode) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    log4.warn({ to, subject, code: devCode }, "RESEND_API_KEY not set \u2014 logging code instead of sending");
+    return;
+  }
+  const res = await fetch(RESEND_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ from: FROM, to, subject, html })
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    log4.error({ status: res.status, body }, "Resend send failed");
+    throw new Error("Failed to send email");
+  }
+}
+function codeEmailHtml(intro, code) {
+  return `
+    <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+      <h2 style="color: #1a472a; margin-bottom: 8px;">${APP_NAME}</h2>
+      <p style="color: #333; font-size: 15px;">${intro}</p>
+      <p style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #1a472a; text-align: center; margin: 24px 0;">${code}</p>
+      <p style="color: #888; font-size: 13px;">This code expires in 15 minutes. If you didn't request it, you can ignore this email.</p>
+    </div>`;
+}
+async function sendVerificationCode(to, code) {
+  await sendEmail(
+    to,
+    `${APP_NAME} \u2014 verify your email`,
+    codeEmailHtml("Enter this code in the app to verify your email address:", code),
+    code
+  );
+}
+async function sendPasswordResetCode(to, code) {
+  await sendEmail(
+    to,
+    `${APP_NAME} \u2014 reset your password`,
+    codeEmailHtml("Enter this code in the app to reset your password:", code),
+    code
+  );
+}
+
+// server/lib/achievement-service.ts
+import { eq as eq2, desc as desc2 } from "drizzle-orm";
+
+// shared/lib/achievements/evaluator.ts
+function evaluateAchievements(ctx) {
+  const { thisGame, previousGames, alreadyUnlocked } = ctx;
+  const newlyUnlocked = [];
+  const isWin = thisGame.result === "win";
+  if (isWin && !alreadyUnlocked.has("first_win")) {
+    newlyUnlocked.push("first_win");
+  }
+  if (isWin && thisGame.mode === "online" && !alreadyUnlocked.has("first_online_win")) {
+    newlyUnlocked.push("first_online_win");
+  }
+  if (isWin && thisGame.score >= 100 && !alreadyUnlocked.has("centurion")) {
+    newlyUnlocked.push("centurion");
+  }
+  if (isWin && thisGame.score - thisGame.opponentScore >= 60 && !alreadyUnlocked.has("landslide")) {
+    newlyUnlocked.push("landslide");
+  }
+  if (isWin && !alreadyUnlocked.has("hat_trick")) {
+    const lastTwo = previousGames.slice(0, 2);
+    if (lastTwo.length === 2 && lastTwo.every((g) => g.result === "win")) {
+      newlyUnlocked.push("hat_trick");
+    }
+  }
+  return newlyUnlocked;
+}
+
+// server/lib/achievement-service.ts
+async function recordGameAndEvaluate(input) {
+  const { userId, result, score, opponentScore, mode } = input;
+  const previous = await db.select({ result: gameHistory.result, mode: gameHistory.mode }).from(gameHistory).where(eq2(gameHistory.userId, userId)).orderBy(desc2(gameHistory.playedAt)).limit(4);
+  const alreadyUnlocked = await db.select({ achievementId: userAchievements.achievementId }).from(userAchievements).where(eq2(userAchievements.userId, userId));
+  await db.insert(gameHistory).values({
+    userId,
+    result,
+    score,
+    opponentScore,
+    mode
+  });
+  const newlyUnlocked = evaluateAchievements({
+    thisGame: { result, score, opponentScore, mode },
+    previousGames: previous.map((g) => ({
+      result: g.result,
+      mode: g.mode
+    })),
+    alreadyUnlocked: new Set(alreadyUnlocked.map((a) => a.achievementId))
+  });
+  if (newlyUnlocked.length > 0) {
+    await db.insert(userAchievements).values(
+      newlyUnlocked.map((id) => ({ userId, achievementId: id }))
+    ).onConflictDoNothing();
+  }
+  return newlyUnlocked;
+}
+async function listUnlockedAchievementIds(userId) {
+  const rows = await db.select({ achievementId: userAchievements.achievementId }).from(userAchievements).where(eq2(userAchievements.userId, userId));
+  return rows.map((r) => r.achievementId);
+}
+
+// shared/lib/achievements/definitions.ts
+var ACHIEVEMENTS = [
+  {
+    id: "first_win",
+    title: "First Win",
+    description: "Win your first game.",
+    icon: "trophy-outline",
+    xp: 10
+  },
+  {
+    id: "first_online_win",
+    title: "Online Debut",
+    description: "Win your first online game.",
+    icon: "earth",
+    xp: 15
+  },
+  {
+    id: "centurion",
+    title: "Centurion",
+    description: "Win a game scoring 100 or more points.",
+    icon: "medal-outline",
+    xp: 25
+  },
+  {
+    id: "landslide",
+    title: "Landslide",
+    description: "Win a game by 60 or more points.",
+    icon: "chart-line",
+    xp: 25
+  },
+  {
+    id: "hat_trick",
+    title: "Hat Trick",
+    description: "Win three games in a row.",
+    icon: "fire",
+    xp: 30
+  }
+];
+var ACHIEVEMENT_BY_ID = new Map(ACHIEVEMENTS.map((a) => [a.id, a]));
+function getAchievementXp(ids) {
+  let total = 0;
+  for (const id of ids) {
+    const def = ACHIEVEMENT_BY_ID.get(id);
+    if (def) total += def.xp;
+  }
+  return total;
+}
+
+// server/lib/quest-service.ts
+import { and as and2, eq as eq3, sql as sql3 } from "drizzle-orm";
+
+// shared/lib/quests/types.ts
+var QUESTS_PER_DAY = 3;
+
+// shared/lib/quests/definitions.ts
+var QUESTS = [
+  {
+    id: "play_3",
+    title: "Warm-up",
+    description: "Play 3 games today.",
+    icon: "play-circle-outline",
+    target: 3,
+    xp: 10,
+    evalDelta: () => 1
+  },
+  {
+    id: "win_2",
+    title: "Daily Double",
+    description: "Win 2 games today.",
+    icon: "trophy-variant-outline",
+    target: 2,
+    xp: 15,
+    evalDelta: (g) => g.result === "win" ? 1 : 0
+  },
+  {
+    id: "score_80",
+    title: "Strong Hand",
+    description: "Score 80 or more in a single game today.",
+    icon: "cards",
+    target: 1,
+    xp: 15,
+    evalDelta: (g) => g.score >= 80 ? 1 : 0
+  },
+  {
+    id: "online_1",
+    title: "Online Outing",
+    description: "Play 1 online game today.",
+    icon: "earth",
+    target: 1,
+    xp: 10,
+    evalDelta: (g) => g.mode === "online" ? 1 : 0
+  },
+  {
+    id: "centurion_today",
+    title: "Hundred Club",
+    description: "Score 100 or more in a single game today.",
+    icon: "medal-outline",
+    target: 1,
+    xp: 25,
+    evalDelta: (g) => g.score >= 100 ? 1 : 0
+  }
+];
+var QUEST_BY_ID = new Map(QUESTS.map((q) => [q.id, q]));
+
+// shared/lib/quests/evaluator.ts
+function utcDateString(now = /* @__PURE__ */ new Date()) {
+  return now.toISOString().slice(0, 10);
+}
+function hash32(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function pickTodaysQuests(date2, n = QUESTS_PER_DAY, catalog = QUESTS) {
+  const scored = catalog.map((q) => ({ q, score: hash32(`${date2}|${q.id}`) }));
+  scored.sort((a, b) => a.score - b.score);
+  return scored.slice(0, Math.min(n, scored.length)).map((s) => s.q);
+}
+function deltaForQuest(quest, game) {
+  const d = quest.evalDelta(game);
+  return d > 0 ? d : 0;
+}
+
+// server/lib/quest-service.ts
+async function getTodaysQuests(userId) {
+  const date2 = utcDateString();
+  const todaysDefs = pickTodaysQuests(date2);
+  const existing = await db.select().from(userQuestProgress).where(
+    and2(
+      eq3(userQuestProgress.userId, userId),
+      eq3(userQuestProgress.questDate, date2)
+    )
+  );
+  const existingById = new Map(existing.map((r) => [r.questId, r]));
+  const quests = todaysDefs.map((def) => {
+    const row = existingById.get(def.id);
+    return {
+      def,
+      progress: {
+        questId: def.id,
+        questDate: date2,
+        progress: row?.progress ?? 0,
+        target: def.target,
+        claimed: row?.claimed ?? false
+      }
+    };
+  });
+  return { date: date2, quests };
+}
+async function applyGameToTodaysQuests(userId, game) {
+  const date2 = utcDateString();
+  const todaysDefs = pickTodaysQuests(date2);
+  for (const def of todaysDefs) {
+    const delta = deltaForQuest(def, game);
+    if (delta <= 0) continue;
+    await db.insert(userQuestProgress).values({
+      userId,
+      questId: def.id,
+      questDate: date2,
+      progress: Math.min(delta, def.target),
+      target: def.target,
+      claimed: false
+    }).onConflictDoUpdate({
+      target: [
+        userQuestProgress.userId,
+        userQuestProgress.questDate,
+        userQuestProgress.questId
+      ],
+      set: {
+        progress: sql3`LEAST(${userQuestProgress.target}, ${userQuestProgress.progress} + ${delta})`
+      }
+    });
+  }
+}
+async function claimQuest(userId, questId) {
+  const def = QUEST_BY_ID.get(questId);
+  if (!def) return { ok: false, reason: "unknown_quest" };
+  const date2 = utcDateString();
+  const todaysIds = new Set(pickTodaysQuests(date2).map((q) => q.id));
+  if (!todaysIds.has(questId)) return { ok: false, reason: "not_today" };
+  const [row] = await db.select().from(userQuestProgress).where(
+    and2(
+      eq3(userQuestProgress.userId, userId),
+      eq3(userQuestProgress.questDate, date2),
+      eq3(userQuestProgress.questId, questId)
+    )
+  ).limit(1);
+  if (!row || row.progress < row.target) return { ok: false, reason: "incomplete" };
+  if (row.claimed) return { ok: false, reason: "already_claimed" };
+  await db.update(userQuestProgress).set({ claimed: true, claimedAt: sql3`now()` }).where(
+    and2(
+      eq3(userQuestProgress.userId, userId),
+      eq3(userQuestProgress.questDate, date2),
+      eq3(userQuestProgress.questId, questId)
+    )
+  );
+  return { ok: true, xp: def.xp };
+}
+
+// server/routes.ts
+var log5 = logger.child({ module: "routes" });
+var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+var ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+var MIN_PASSWORD_LENGTH = 8;
+var codeRequestLimiter = createKeyedRateLimiter({ capacity: 5, refillPerMs: 5 / (15 * 6e4) });
+var loginIpLimiter = createKeyedRateLimiter({ capacity: 20, refillPerMs: 20 / (15 * 6e4) });
+var loginEmailLimiter = createKeyedRateLimiter({ capacity: 8, refillPerMs: 8 / (15 * 6e4) });
+var registerIpLimiter = createKeyedRateLimiter({ capacity: 10, refillPerMs: 10 / (15 * 6e4) });
+var TOO_MANY = { error: "Too many attempts \u2014 please try again later" };
+function clientIp(req) {
+  const fwd = req.headers["x-forwarded-for"];
+  if (typeof fwd === "string" && fwd.length > 0) return fwd.split(",")[0].trim();
+  return req.socket.remoteAddress ?? "unknown";
+}
+function isAtLeast18ISO(iso) {
+  if (!ISO_DATE_RE.test(iso)) return false;
+  const [y, m, d] = iso.split("-").map(Number);
+  const dob = new Date(Date.UTC(y, m - 1, d));
+  if (isNaN(dob.getTime()) || dob.getUTCDate() !== d || dob.getUTCMonth() !== m - 1) return false;
+  const now = /* @__PURE__ */ new Date();
+  let age = now.getUTCFullYear() - y;
+  const mDiff = now.getUTCMonth() - (m - 1);
+  if (mDiff < 0 || mDiff === 0 && now.getUTCDate() < d) age--;
+  return age >= 18;
+}
 async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  try {
-    const token = authHeader.slice(7);
-    const payload = await verifyToken(token, { secretKey: CLERK_SECRET_KEY });
-    req.clerkUserId = payload.sub;
-    next();
-  } catch (err) {
-    console.error("Token verification failed:", err);
+  const claims = await verifyAuthToken(authHeader.slice(7));
+  if (!claims) {
     res.status(401).json({ error: "Invalid token" });
+    return;
   }
+  req.userId = claims.userId;
+  req.emailVerified = claims.emailVerified;
+  next();
+}
+function requireVerified(req, res, next) {
+  if (!req.emailVerified) {
+    res.status(403).json({ error: "Email not verified", code: "EMAIL_NOT_VERIFIED" });
+    return;
+  }
+  next();
 }
 async function registerRoutes(app2) {
   app2.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
   });
+  app2.post("/api/auth/register", async (req, res) => {
+    try {
+      if (!registerIpLimiter.take(clientIp(req))) {
+        res.status(429).json(TOO_MANY);
+        return;
+      }
+      const { email, password, firstName, lastName, dateOfBirth } = req.body ?? {};
+      if (typeof email !== "string" || !EMAIL_RE.test(email)) {
+        res.status(400).json({ error: "A valid email is required" });
+        return;
+      }
+      if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
+        res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+        return;
+      }
+      if (typeof firstName !== "string" || !firstName.trim() || typeof lastName !== "string" || !lastName.trim()) {
+        res.status(400).json({ error: "First and last name are required" });
+        return;
+      }
+      if (typeof dateOfBirth !== "string" || !isAtLeast18ISO(dateOfBirth)) {
+        res.status(400).json({ error: "You must be at least 18 years old" });
+        return;
+      }
+      const normalizedEmail = email.trim().toLowerCase();
+      const [existing] = await db.select({ id: users.id }).from(users).where(eq4(users.email, normalizedEmail)).limit(1);
+      if (existing) {
+        res.status(409).json({ error: "An account with this email already exists" });
+        return;
+      }
+      const passwordHash = await hashPassword(password);
+      const [created] = await db.insert(users).values({
+        email: normalizedEmail,
+        passwordHash,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        dateOfBirth
+      }).returning({ id: users.id });
+      try {
+        const code = await issueCode(created.id, "email_verify");
+        await sendVerificationCode(normalizedEmail, code);
+      } catch (err) {
+        log5.error({ err }, "failed to send verification email on register");
+      }
+      const token = await signAuthToken(created.id, false);
+      res.status(201).json({ token, userId: created.id, emailVerified: false });
+    } catch (err) {
+      log5.error({ err }, "registration failed");
+      res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+  app2.post("/api/auth/login", async (req, res) => {
+    try {
+      if (!loginIpLimiter.take(clientIp(req))) {
+        res.status(429).json(TOO_MANY);
+        return;
+      }
+      const { email, password } = req.body ?? {};
+      if (typeof email !== "string" || typeof password !== "string") {
+        res.status(400).json({ error: "Email and password are required" });
+        return;
+      }
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!loginEmailLimiter.take(normalizedEmail)) {
+        res.status(429).json(TOO_MANY);
+        return;
+      }
+      const [user] = await db.select().from(users).where(eq4(users.email, normalizedEmail)).limit(1);
+      const ok = user ? await verifyPassword(password, user.passwordHash) : await verifyPassword(password, "$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinv");
+      if (!user || !ok) {
+        res.status(401).json({ error: "Invalid email or password" });
+        return;
+      }
+      const token = await signAuthToken(user.id, user.emailVerified);
+      res.json({ token, userId: user.id, emailVerified: user.emailVerified });
+    } catch (err) {
+      log5.error({ err }, "login failed");
+      res.status(500).json({ error: "Failed to sign in" });
+    }
+  });
+  app2.post("/api/auth/verify-email", requireAuth, async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { code } = req.body ?? {};
+      if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+        res.status(400).json({ error: "Enter the 6-digit code" });
+        return;
+      }
+      const result = await verifyCode(userId, "email_verify", code);
+      if (!result.ok) {
+        const status = result.reason === "too_many_attempts" ? 429 : 400;
+        res.status(status).json({ error: result.reason });
+        return;
+      }
+      await db.update(users).set({ emailVerified: true, updatedAt: sql4`now()` }).where(eq4(users.id, userId));
+      const token = await signAuthToken(userId, true);
+      res.json({ ok: true, token, emailVerified: true });
+    } catch (err) {
+      log5.error({ err }, "email verification failed");
+      res.status(500).json({ error: "Failed to verify email" });
+    }
+  });
+  app2.post("/api/auth/resend-verification", requireAuth, async (req, res) => {
+    try {
+      const userId = req.userId;
+      if (req.emailVerified) {
+        res.json({ ok: true });
+        return;
+      }
+      if (!codeRequestLimiter.take(`verify:${userId}`)) {
+        res.status(429).json({ error: "Too many requests \u2014 try again later" });
+        return;
+      }
+      const [user] = await db.select({ email: users.email }).from(users).where(eq4(users.id, userId)).limit(1);
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      const code = await issueCode(userId, "email_verify");
+      await sendVerificationCode(user.email, code);
+      res.json({ ok: true });
+    } catch (err) {
+      log5.error({ err }, "resend verification failed");
+      res.status(500).json({ error: "Failed to resend code" });
+    }
+  });
+  app2.post("/api/auth/request-password-reset", async (req, res) => {
+    const genericOk = () => res.json({ ok: true });
+    try {
+      const { email } = req.body ?? {};
+      if (typeof email !== "string" || !EMAIL_RE.test(email)) {
+        res.status(400).json({ error: "A valid email is required" });
+        return;
+      }
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!codeRequestLimiter.take(`reset:${normalizedEmail}`)) {
+        genericOk();
+        return;
+      }
+      const [user] = await db.select({ id: users.id }).from(users).where(eq4(users.email, normalizedEmail)).limit(1);
+      if (user) {
+        const code = await issueCode(user.id, "password_reset");
+        await sendPasswordResetCode(normalizedEmail, code);
+      }
+      genericOk();
+    } catch (err) {
+      log5.error({ err }, "request password reset failed");
+      res.json({ ok: true });
+    }
+  });
+  app2.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body ?? {};
+      if (typeof email !== "string" || !EMAIL_RE.test(email) || typeof code !== "string" || !/^\d{6}$/.test(code)) {
+        res.status(400).json({ error: "Invalid email or code" });
+        return;
+      }
+      if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD_LENGTH) {
+        res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+        return;
+      }
+      const normalizedEmail = email.trim().toLowerCase();
+      const [user] = await db.select({ id: users.id }).from(users).where(eq4(users.email, normalizedEmail)).limit(1);
+      if (!user) {
+        res.status(400).json({ error: "invalid" });
+        return;
+      }
+      const result = await verifyCode(user.id, "password_reset", code);
+      if (!result.ok) {
+        const status = result.reason === "too_many_attempts" ? 429 : 400;
+        res.status(status).json({ error: result.reason });
+        return;
+      }
+      await db.update(users).set({ passwordHash: await hashPassword(newPassword), emailVerified: true, updatedAt: sql4`now()` }).where(eq4(users.id, user.id));
+      res.json({ ok: true });
+    } catch (err) {
+      log5.error({ err }, "reset password failed");
+      res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
+  app2.post("/api/auth/change-password", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { currentPassword, newPassword } = req.body ?? {};
+      if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD_LENGTH) {
+        res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+        return;
+      }
+      const [user] = await db.select().from(users).where(eq4(users.id, userId)).limit(1);
+      if (!user) {
+        res.status(404).json({ error: "User not found" });
+        return;
+      }
+      if (typeof currentPassword !== "string" || !await verifyPassword(currentPassword, user.passwordHash)) {
+        res.status(401).json({ error: "Current password is incorrect" });
+        return;
+      }
+      await db.update(users).set({ passwordHash: await hashPassword(newPassword), updatedAt: sql4`now()` }).where(eq4(users.id, userId));
+      res.json({ ok: true });
+    } catch (err) {
+      log5.error({ err }, "change password failed");
+      res.status(500).json({ error: "Failed to change password" });
+    }
+  });
   app2.get("/api/rooms", async (_req, res) => {
     try {
       res.json(await getPublicRooms());
     } catch (err) {
-      console.error("Failed to list rooms:", err);
+      log5.error({ err }, "failed to list rooms");
       res.status(500).json({ error: "Failed to list rooms" });
     }
   });
-  app2.get("/api/stats", requireAuth, async (req, res) => {
+  app2.get("/api/stats", requireAuth, requireVerified, async (req, res) => {
     try {
-      const userId = req.clerkUserId;
+      const userId = req.userId;
       const [agg, recent] = await Promise.all([
         db.select({
-          wins: sql2`COUNT(*) FILTER (WHERE result = 'win')`,
-          losses: sql2`COUNT(*) FILTER (WHERE result = 'loss')`,
-          avgScore: sql2`COALESCE(ROUND(AVG(score)), 0)`
-        }).from(gameHistory).where(eq(gameHistory.clerkUserId, userId)),
-        db.select().from(gameHistory).where(eq(gameHistory.clerkUserId, userId)).orderBy(desc(gameHistory.playedAt)).limit(10)
+          wins: sql4`COUNT(*) FILTER (WHERE result = 'win')`,
+          losses: sql4`COUNT(*) FILTER (WHERE result = 'loss')`,
+          avgScore: sql4`COALESCE(ROUND(AVG(score)), 0)`
+        }).from(gameHistory).where(eq4(gameHistory.userId, userId)),
+        db.select().from(gameHistory).where(eq4(gameHistory.userId, userId)).orderBy(desc3(gameHistory.playedAt)).limit(10)
       ]);
       const { wins, losses, avgScore } = agg[0] ?? { wins: 0, losses: 0, avgScore: 0 };
       res.json({ wins, losses, avgScore, recent });
@@ -1086,8 +1795,14 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/users/me", requireAuth, async (req, res) => {
     try {
-      const userId = req.clerkUserId;
-      const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.clerkId, userId)).limit(1);
+      const userId = req.userId;
+      const [profile] = await db.select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        dateOfBirth: users.dateOfBirth
+      }).from(users).where(eq4(users.id, userId)).limit(1);
       if (!profile) {
         res.status(404).json({ error: "Profile not found" });
         return;
@@ -1097,33 +1812,148 @@ async function registerRoutes(app2) {
       res.status(500).json({ error: "Failed to fetch profile" });
     }
   });
-  app2.post("/api/users/profile", requireAuth, async (req, res) => {
+  app2.post("/api/users/profile", requireAuth, requireVerified, async (req, res) => {
     try {
-      const userId = req.clerkUserId;
-      const { firstName, lastName, dateOfBirth } = req.body;
-      await db.insert(userProfiles).values({ clerkId: userId, firstName, lastName, dateOfBirth }).onConflictDoUpdate({
-        target: userProfiles.clerkId,
-        set: {
-          firstName,
-          lastName,
-          dateOfBirth,
-          updatedAt: sql2`now()`
-        }
-      });
+      const userId = req.userId;
+      const { firstName, lastName, dateOfBirth } = req.body ?? {};
+      if (typeof firstName !== "string" || !firstName.trim() || typeof lastName !== "string" || !lastName.trim()) {
+        res.status(400).json({ error: "First and last name are required" });
+        return;
+      }
+      if (typeof dateOfBirth !== "string" || !isAtLeast18ISO(dateOfBirth)) {
+        res.status(400).json({ error: "You must be at least 18 years old" });
+        return;
+      }
+      await db.update(users).set({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        dateOfBirth,
+        updatedAt: sql4`now()`
+      }).where(eq4(users.id, userId));
       res.json({ ok: true });
     } catch (err) {
-      console.error("Failed to save profile:", err);
+      log5.error({ err }, "failed to save profile");
       res.status(500).json({ error: "Failed to save profile" });
     }
   });
-  app2.post("/api/game-history", requireAuth, async (req, res) => {
+  app2.post("/api/game-history", requireAuth, requireVerified, async (req, res) => {
     try {
-      const userId = req.clerkUserId;
-      const { result, score, opponentScore, mode, aiDifficulty } = req.body;
-      await db.insert(gameHistory).values({ clerkUserId: userId, result, score, opponentScore, mode, aiDifficulty });
-      res.json({ ok: true });
-    } catch {
+      const userId = req.userId;
+      const { result, score, opponentScore, mode } = req.body;
+      if (result !== "win" && result !== "loss" && result !== "draw" || mode !== "ai" && mode !== "online" || typeof score !== "number" || typeof opponentScore !== "number") {
+        res.status(400).json({ error: "Invalid game payload" });
+        return;
+      }
+      const newlyUnlocked = await recordGameAndEvaluate({
+        userId,
+        result,
+        score,
+        opponentScore,
+        mode
+      });
+      try {
+        await applyGameToTodaysQuests(userId, { result, score, opponentScore, mode });
+      } catch (err) {
+        log5.error({ err }, "quest progress update failed");
+      }
+      res.json({ ok: true, newlyUnlocked });
+    } catch (err) {
+      log5.error({ err }, "failed to save game");
       res.status(500).json({ error: "Failed to save game" });
+    }
+  });
+  app2.get("/api/quests/today", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { date: date2, quests } = await getTodaysQuests(userId);
+      res.json({
+        date: date2,
+        quests: quests.map(({ def, progress }) => ({
+          id: def.id,
+          title: def.title,
+          description: def.description,
+          icon: def.icon,
+          xp: def.xp,
+          target: def.target,
+          progress: progress.progress,
+          claimed: progress.claimed,
+          claimable: progress.progress >= progress.target && !progress.claimed
+        }))
+      });
+    } catch (err) {
+      log5.error({ err }, "failed to fetch quests");
+      res.status(500).json({ error: "Failed to fetch quests" });
+    }
+  });
+  app2.post("/api/quests/claim", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { questId } = req.body ?? {};
+      if (typeof questId !== "string" || questId.length === 0) {
+        res.status(400).json({ error: "questId required" });
+        return;
+      }
+      const result = await claimQuest(userId, questId);
+      if (!result.ok) {
+        const code = result.reason === "already_claimed" ? 409 : result.reason === "incomplete" ? 400 : 404;
+        res.status(code).json({ error: result.reason });
+        return;
+      }
+      res.json({ ok: true, xp: result.xp });
+    } catch (err) {
+      log5.error({ err }, "failed to claim quest");
+      res.status(500).json({ error: "Failed to claim quest" });
+    }
+  });
+  app2.get("/api/achievements", requireAuth, requireVerified, async (req, res) => {
+    try {
+      const userId = req.userId;
+      const unlockedIds = await listUnlockedAchievementIds(userId);
+      const unlockedSet = new Set(unlockedIds);
+      const list = ACHIEVEMENTS.map((a) => ({
+        id: a.id,
+        title: a.title,
+        description: a.description,
+        icon: a.icon,
+        xp: a.xp,
+        unlocked: unlockedSet.has(a.id)
+      }));
+      res.json({
+        achievements: list,
+        totalXp: getAchievementXp(unlockedIds),
+        unlockedCount: unlockedIds.length,
+        totalCount: ACHIEVEMENTS.length
+      });
+    } catch (err) {
+      log5.error({ err }, "failed to fetch achievements");
+      res.status(500).json({ error: "Failed to fetch achievements" });
+    }
+  });
+  app2.get("/api/leaderboard", async (req, res) => {
+    try {
+      const periodDays = req.query.period === "all" ? null : 7;
+      const rows = await db.select({
+        userId: gameHistory.userId,
+        firstName: users.firstName,
+        wins: sql4`COUNT(*) FILTER (WHERE ${gameHistory.result} = 'win')`.as("wins"),
+        games: sql4`COUNT(*)`.as("games"),
+        avgScore: sql4`COALESCE(ROUND(AVG(${gameHistory.score}))::int, 0)`.as("avgScore")
+      }).from(gameHistory).leftJoin(users, eq4(users.id, gameHistory.userId)).where(
+        periodDays ? sql4`${gameHistory.playedAt} > now() - interval '${sql4.raw(String(periodDays))} days'` : sql4`true`
+      ).groupBy(gameHistory.userId, users.firstName).orderBy(sql4`wins DESC, "avgScore" DESC`).limit(20);
+      res.json({
+        period: periodDays ? `${periodDays}d` : "all",
+        entries: rows.map((r, i) => ({
+          rank: i + 1,
+          displayName: r.firstName ?? "Player",
+          wins: r.wins,
+          games: r.games,
+          avgScore: r.avgScore
+        }))
+      });
+    } catch (err) {
+      log5.error({ err }, "failed to fetch leaderboard");
+      res.status(500).json({ error: "Failed to fetch leaderboard" });
     }
   });
   const httpServer = createServer(app2);
@@ -1161,7 +1991,7 @@ async function registerRoutes(app2) {
 import * as fs from "fs";
 import * as path from "path";
 var app = express();
-var log = console.log;
+var log6 = logger;
 function setupCors(app2) {
   app2.use((req, res, next) => {
     const origins = /* @__PURE__ */ new Set();
@@ -1198,29 +2028,24 @@ function setupBodyParsing(app2) {
   app2.use(express.urlencoded({ extended: false }));
 }
 function setupRequestLogging(app2) {
-  app2.use((req, res, next) => {
-    const start = Date.now();
-    const path2 = req.path;
-    let capturedJsonResponse = void 0;
-    const originalResJson = res.json;
-    res.json = function(bodyJson, ...args) {
-      capturedJsonResponse = bodyJson;
-      return originalResJson.apply(res, [bodyJson, ...args]);
-    };
-    res.on("finish", () => {
-      if (!path2.startsWith("/api")) return;
-      const duration = Date.now() - start;
-      let logLine = `${req.method} ${path2} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+  app2.use(
+    pinoHttp({
+      logger,
+      customLogLevel: (_req, res, err) => {
+        if (err || res.statusCode >= 500) return "error";
+        if (res.statusCode >= 400) return "warn";
+        return "info";
+      },
+      // Only emit one line per request and skip noisy non-API paths.
+      autoLogging: {
+        ignore: (req) => !(req.url ?? "").startsWith("/api")
+      },
+      serializers: {
+        req: (req) => ({ method: req.method, url: req.url }),
+        res: (res) => ({ statusCode: res.statusCode })
       }
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "\u2026";
-      }
-      log(logLine);
-    });
-    next();
-  });
+    })
+  );
 }
 function getAppName() {
   try {
@@ -1260,8 +2085,7 @@ function serveLandingPage({
   const host = forwardedHost || req.get("host");
   const baseUrl = `${protocol}://${host}`;
   const expsUrl = `${host}`;
-  log(`baseUrl`, baseUrl);
-  log(`expsUrl`, expsUrl);
+  log6.debug({ baseUrl, expsUrl }, "serving landing page");
   const html = landingPageTemplate.replace(/BASE_URL_PLACEHOLDER/g, baseUrl).replace(/EXPS_URL_PLACEHOLDER/g, expsUrl).replace(/APP_NAME_PLACEHOLDER/g, appName);
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.status(200).send(html);
@@ -1275,7 +2099,7 @@ function configureExpoAndLanding(app2) {
   );
   const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
-  log("Serving static Expo files with dynamic manifest routing");
+  log6.info("Serving static Expo files with dynamic manifest routing");
   app2.use((req, res, next) => {
     if (req.path.startsWith("/api")) {
       return next();
@@ -1299,14 +2123,14 @@ function configureExpoAndLanding(app2) {
   });
   app2.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app2.use(express.static(path.resolve(process.cwd(), "static-build")));
-  log("Expo routing: Checking expo-platform header on / and /manifest");
+  log6.info("Expo routing: checking expo-platform header on / and /manifest");
 }
 function setupErrorHandler(app2) {
   app2.use((err, _req, res, next) => {
     const error = err;
     const status = error.status || error.statusCode || 500;
     const message = error.message || "Internal Server Error";
-    console.error("Internal Server Error:", err);
+    logger.error({ err }, "internal server error");
     if (res.headersSent) {
       return next(err);
     }
@@ -1329,6 +2153,6 @@ function setupErrorHandler(app2) {
   setupErrorHandler(app);
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen(port, "0.0.0.0", () => {
-    log(`express server serving on port ${port}`);
+    log6.info({ port }, "express server listening");
   });
 })();

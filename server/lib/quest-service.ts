@@ -16,7 +16,7 @@ import type { EvaluatedGame } from '../../shared/lib/achievements/evaluator';
  * picks they haven't accumulated against yet. The DB row is created lazily
  * on the first matching game.
  */
-export async function getTodaysQuests(clerkUserId: string): Promise<{
+export async function getTodaysQuests(userId: string): Promise<{
   date: string;
   quests: Array<{ def: QuestDef; progress: QuestProgress }>;
 }> {
@@ -28,7 +28,7 @@ export async function getTodaysQuests(clerkUserId: string): Promise<{
     .from(userQuestProgress)
     .where(
       and(
-        eq(userQuestProgress.clerkUserId, clerkUserId),
+        eq(userQuestProgress.userId, userId),
         eq(userQuestProgress.questDate, date),
       ),
     );
@@ -56,7 +56,7 @@ export async function getTodaysQuests(clerkUserId: string): Promise<{
  * progress (clamped to target). Creates rows lazily if needed.
  */
 export async function applyGameToTodaysQuests(
-  clerkUserId: string,
+  userId: string,
   game: EvaluatedGame,
 ): Promise<void> {
   const date = utcDateString();
@@ -70,7 +70,7 @@ export async function applyGameToTodaysQuests(
     await db
       .insert(userQuestProgress)
       .values({
-        clerkUserId,
+        userId,
         questId: def.id,
         questDate: date,
         progress: Math.min(delta, def.target),
@@ -79,7 +79,7 @@ export async function applyGameToTodaysQuests(
       })
       .onConflictDoUpdate({
         target: [
-          userQuestProgress.clerkUserId,
+          userQuestProgress.userId,
           userQuestProgress.questDate,
           userQuestProgress.questId,
         ],
@@ -101,7 +101,7 @@ export interface ClaimResult {
  * verifies progress >= target before awarding.
  */
 export async function claimQuest(
-  clerkUserId: string,
+  userId: string,
   questId: string,
 ): Promise<ClaimResult> {
   const def = QUEST_BY_ID.get(questId);
@@ -116,7 +116,7 @@ export async function claimQuest(
     .from(userQuestProgress)
     .where(
       and(
-        eq(userQuestProgress.clerkUserId, clerkUserId),
+        eq(userQuestProgress.userId, userId),
         eq(userQuestProgress.questDate, date),
         eq(userQuestProgress.questId, questId),
       ),
@@ -131,7 +131,7 @@ export async function claimQuest(
     .set({ claimed: true, claimedAt: sql`now()` })
     .where(
       and(
-        eq(userQuestProgress.clerkUserId, clerkUserId),
+        eq(userQuestProgress.userId, userId),
         eq(userQuestProgress.questDate, date),
         eq(userQuestProgress.questId, questId),
       ),

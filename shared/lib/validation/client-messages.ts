@@ -25,8 +25,6 @@ const cardId = z
   .max(32)
   .regex(/^[A-Za-z0-9_-]+$/);
 
-const clerkToken = z.string().max(4096).optional();
-
 const team = z.union([z.literal(0), z.literal(1)]);
 
 export const createRoomSchema = z.object({
@@ -35,7 +33,6 @@ export const createRoomSchema = z.object({
   maxPlayers: z.number().int().min(2).max(4),
   isPublic: z.boolean().optional(),
   strictFollowSuit: z.boolean().optional(),
-  clerkToken,
 });
 
 export const joinRoomSchema = z.object({
@@ -43,7 +40,6 @@ export const joinRoomSchema = z.object({
   roomCode,
   playerName,
   preferredTeam: team.optional(),
-  clerkToken,
 });
 
 export const switchTeamSchema = z.object({

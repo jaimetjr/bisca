@@ -10,7 +10,6 @@ import type { GameState } from '../../shared/lib/types';
 import { TRICK_DISPLAY_MS } from '../../shared/constants/game';
 
 vi.mock('../../server/db', () => ({ db: {} }));
-vi.mock('@clerk/backend', () => ({ verifyToken: vi.fn() }));
 
 let server: Server;
 let wsUrl: string;

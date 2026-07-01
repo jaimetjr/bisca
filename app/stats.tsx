@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@shared/hooks/useAuth';
 import Colors from '@/shared/constants/colors';
 import { t } from '@/shared/i18n';
 import { getApiUrl } from '@/shared/query-client';

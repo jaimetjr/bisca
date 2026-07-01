@@ -9,12 +9,20 @@ const REVENUECAT_API_KEY =
     ? process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS
     : process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID) ?? '';
 
+/**
+ * Whether in-app purchases are usable in this build: false on web or when no
+ * RevenueCat key is set (ads-only builds). Used to hide the purchase UI so
+ * users never see a dead "Remove Ads" button.
+ */
+export const PURCHASES_AVAILABLE = Platform.OS !== 'web' && !!REVENUECAT_API_KEY;
+
 /** The entitlement identifier configured in RevenueCat dashboard */
 export const REMOVE_ADS_ENTITLEMENT = 'remove_ads';
 
 interface EntitlementCtx {
   isPremium: boolean;
   loading: boolean;
+  available: boolean;
   purchase: () => Promise<boolean>;
   restore: () => Promise<boolean>;
 }
@@ -22,6 +30,7 @@ interface EntitlementCtx {
 const EntitlementContext = createContext<EntitlementCtx>({
   isPremium: false,
   loading: false,
+  available: false,
   purchase: async () => false,
   restore: async () => false,
 });
@@ -95,7 +104,7 @@ export function EntitlementProvider({ userId, children }: EntitlementProviderPro
 
   return React.createElement(
     EntitlementContext.Provider,
-    { value: { isPremium, loading, purchase, restore } },
+    { value: { isPremium, loading, available: PURCHASES_AVAILABLE, purchase, restore } },
     children
   );
 }

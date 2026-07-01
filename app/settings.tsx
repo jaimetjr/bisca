@@ -9,7 +9,7 @@ import { t, SUPPORTED_LANGUAGE_CODES } from '@/shared/i18n';
 import { useSettings, AppSettings } from '@/shared/hooks/useSettings';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import type { AIDifficulty } from '@/shared/lib/types';
-import { useAuth } from '@clerk/clerk-expo';
+import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
 
@@ -31,7 +31,7 @@ export default function SettingsScreen() {
   const { changeLanguage } = useLanguage();
   const { signOut } = useAuth();
   const { isGuest, disableGuestMode } = useGuestMode();
-  const { isPremium, purchase, restore } = useEntitlement();
+  const { isPremium, available, purchase, restore } = useEntitlement();
   const [signingOut, setSigningOut] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -150,10 +150,10 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Premium */}
-        <Text style={styles.sectionHeader}>{t('settings.premium')}</Text>
+        {/* Premium — hidden entirely when in-app purchases aren't configured (ads-only build) */}
+        {available && <Text style={styles.sectionHeader}>{t('settings.premium')}</Text>}
 
-        {isPremium ? (
+        {available && (isPremium ? (
           <View style={styles.card}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <MaterialCommunityIcons name="check-circle" size={20} color={Colors.gold} />
@@ -192,7 +192,7 @@ export default function SettingsScreen() {
               <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
             </Pressable>
           </>
-        )}
+        ))}
 
         {/* Account */}
         <Text style={styles.sectionHeader}>{t('settings.account')}</Text>

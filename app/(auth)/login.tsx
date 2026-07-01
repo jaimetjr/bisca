@@ -1,32 +1,17 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform, ScrollView, KeyboardAvoidingView } from 'react-native';
-import { useSignIn, useSignUp, useOAuth } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
 import Colors from '@/shared/constants/colors';
+import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { isAtLeast18, dobToISO, formatLocaleDate, getLocaleDatePlaceholder } from '@shared/lib/date';
 import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
-import { translateClerkError } from '@/shared/i18n/clerk-errors';
-
-function GoogleLogo({ size = 20 }: { size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 48 48">
-      <Path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" />
-      <Path fill="#FF3D00" d="m6.306 14.691 6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" />
-      <Path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" />
-      <Path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" />
-    </Svg>
-  );
-}
 
 export default function LoginScreen() {
-  const { signIn, setActive: setSignInActive, isLoaded: signInLoaded } = useSignIn();
-  const { signUp, setActive: setSignUpActive, isLoaded: signUpLoaded } = useSignUp();
-  const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
+  const { signIn, signUp } = useAuth();
   const { enableGuestMode } = useGuestMode();
   const router = useRouter();
   useLanguage(); // subscribe to language changes so t() output updates
@@ -37,31 +22,10 @@ export default function LoginScreen() {
   const [lastName, setLastName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [verifyCode, setVerifyCode] = useState('');
-  const [pendingVerification, setPendingVerification] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    setErrorMsg('');
-    try {
-      const { createdSessionId, setActive } = await startOAuthFlow();
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
-        // Always go to complete-profile — it will redirect home if profile already exists
-        router.replace('/(auth)/complete-profile');
-      }
-    } catch (e: any) {
-      setErrorMsg(translateClerkError(e, 'auth.errGoogleFailed'));
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
   const handleEmailAuth = async () => {
-    if (!signInLoaded || !signUpLoaded) return;
     setLoading(true);
     setErrorMsg('');
     try {
@@ -78,48 +42,28 @@ export default function LoginScreen() {
           setErrorMsg(t('auth.errUnder18'));
           return;
         }
-        await signUp!.create({
-          emailAddress: email,
+        const result = await signUp({
+          email: email.trim(),
           password,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
-        });
-        await signUp!.prepareEmailAddressVerification({ strategy: 'email_code' });
-        setPendingVerification(true);
-      } else {
-        const result = await signIn!.create({ identifier: email, password });
-        if (result.status === 'complete') {
-          await setSignInActive!({ session: result.createdSessionId });
-        } else {
-          setErrorMsg(t('auth.errSignInIncomplete'));
-        }
-      }
-    } catch (e: any) {
-      setErrorMsg(translateClerkError(e, 'auth.errAuthFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerify = async () => {
-    if (!signUpLoaded) return;
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      const result = await signUp!.attemptEmailAddressVerification({ code: verifyCode });
-      if (result.status === 'complete') {
-        await setSignUpActive!({ session: result.createdSessionId });
-        // Store profile data for complete-profile screen to pick up
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        await AsyncStorage.setItem('pending_profile', JSON.stringify({
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
           dateOfBirth: dobToISO(dateOfBirth),
-        }));
-        router.replace('/(auth)/complete-profile');
+        });
+        if (!result.ok) {
+          setErrorMsg(result.error);
+          return;
+        }
+        // New accounts are unverified — go straight to the verify screen.
+        router.replace('/(auth)/verify-email');
+      } else {
+        const result = await signIn(email.trim(), password);
+        if (!result.ok) {
+          setErrorMsg(result.error);
+          return;
+        }
+        // AuthGuard routes to verify-email if this account isn't verified yet.
+        router.replace('/');
       }
-    } catch (e: any) {
-      setErrorMsg(translateClerkError(e, 'auth.errVerifyFailed'));
     } finally {
       setLoading(false);
     }
@@ -131,159 +75,120 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-    <ScrollView
-      contentContainerStyle={styles.scrollContent}
-      keyboardShouldPersistTaps="handled"
-    >
+    <View style={styles.root}>
       <LinearGradient
         colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
         style={StyleSheet.absoluteFill}
       />
-
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.logoContainer}>
         <MaterialCommunityIcons name="cards-playing" size={56} color={Colors.gold} />
       </View>
       <Text style={styles.title}>Bisca</Text>
       <Text style={styles.subtitle}>{t('auth.subtitle')}</Text>
 
-      {!pendingVerification ? (
+      {isRegistering && (
         <>
-          {/* Google sign-in — not available on web */}
-          {Platform.OS !== 'web' && (
-            <Pressable
-              style={({ pressed }) => [styles.googleBtn, pressed && { opacity: 0.85 }]}
-              onPress={handleGoogleSignIn}
-              disabled={googleLoading || loading}
-            >
-              {googleLoading ? (
-                <ActivityIndicator size="small" color={Colors.textDark} />
-              ) : (
-                <GoogleLogo size={20} />
-              )}
-              <Text style={styles.googleBtnText}>{t('auth.continueWithGoogle')}</Text>
-            </Pressable>
-          )}
-
-          <View style={styles.dividerRow}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>{t('auth.or')}</Text>
-            <View style={styles.divider} />
-          </View>
-
-          {isRegistering && (
-            <>
-              <TextInput
-                style={styles.input}
-                value={firstName}
-                onChangeText={setFirstName}
-                placeholder={t('auth.firstName')}
-                placeholderTextColor={Colors.textSecondary}
-                autoCapitalize="words"
-              />
-              <TextInput
-                style={styles.input}
-                value={lastName}
-                onChangeText={setLastName}
-                placeholder={t('auth.lastName')}
-                placeholderTextColor={Colors.textSecondary}
-                autoCapitalize="words"
-              />
-              <TextInput
-                style={styles.input}
-                value={dateOfBirth}
-                onChangeText={(v) => setDateOfBirth(formatLocaleDate(v))}
-                placeholder={`${t('auth.dateOfBirth')} (${getLocaleDatePlaceholder()})`}
-                placeholderTextColor={Colors.textSecondary}
-                keyboardType="number-pad"
-                maxLength={10}
-              />
-            </>
-          )}
-
           <TextInput
             style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder={t('auth.email')}
+            value={firstName}
+            onChangeText={setFirstName}
+            placeholder={t('auth.firstName')}
             placeholderTextColor={Colors.textSecondary}
-            keyboardType="email-address"
-            autoCapitalize="none"
+            autoCapitalize="words"
           />
           <TextInput
             style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder={t('auth.password')}
+            value={lastName}
+            onChangeText={setLastName}
+            placeholder={t('auth.lastName')}
             placeholderTextColor={Colors.textSecondary}
-            secureTextEntry
+            autoCapitalize="words"
           />
-
-          {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
-
-          <Pressable
-            style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85 }]}
-            onPress={handleEmailAuth}
-            disabled={loading || googleLoading || !email || !password}
-          >
-            {loading ? (
-              <ActivityIndicator color={Colors.textDark} />
-            ) : (
-              <Text style={styles.primaryBtnText}>{isRegistering ? t('auth.createAccount') : t('auth.signIn')}</Text>
-            )}
-          </Pressable>
-
-          <Pressable onPress={() => { setIsRegistering(!isRegistering); setErrorMsg(''); setEmail(''); setPassword(''); setFirstName(''); setLastName(''); setDateOfBirth(''); }}>
-            <Text style={styles.switchText}>
-              {isRegistering ? t('auth.haveAccountSignIn') : t('auth.noAccountRegister')}
-            </Text>
-          </Pressable>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>{t('auth.or')}</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <Pressable
-            style={({ pressed }) => [styles.guestBtn, pressed && { opacity: 0.75 }]}
-            onPress={handleGuestMode}
-            disabled={loading}
-          >
-            <MaterialCommunityIcons name="account-outline" size={18} color={Colors.textSecondary} />
-            <Text style={styles.guestBtnText}>{t('auth.continueAsGuest')}</Text>
-          </Pressable>
-        </>
-      ) : (
-        <>
-          <Text style={styles.verifyHint}>{t('auth.verifyHint', { email })}</Text>
           <TextInput
             style={styles.input}
-            value={verifyCode}
-            onChangeText={setVerifyCode}
-            placeholder={t('auth.verificationCode')}
+            value={dateOfBirth}
+            onChangeText={(v) => setDateOfBirth(formatLocaleDate(v))}
+            placeholder={`${t('auth.dateOfBirth')} (${getLocaleDatePlaceholder()})`}
             placeholderTextColor={Colors.textSecondary}
             keyboardType="number-pad"
+            maxLength={10}
           />
-          {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
-          <Pressable
-            style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85 }]}
-            onPress={handleVerify}
-            disabled={loading || !verifyCode}
-          >
-            {loading ? <ActivityIndicator color={Colors.textDark} /> : <Text style={styles.primaryBtnText}>{t('auth.verify')}</Text>}
-          </Pressable>
         </>
       )}
-    </ScrollView>
-    </KeyboardAvoidingView>
+
+      <TextInput
+        style={styles.input}
+        value={email}
+        onChangeText={setEmail}
+        placeholder={t('auth.email')}
+        placeholderTextColor={Colors.textSecondary}
+        keyboardType="email-address"
+        autoCapitalize="none"
+      />
+      <TextInput
+        style={styles.input}
+        value={password}
+        onChangeText={setPassword}
+        placeholder={t('auth.password')}
+        placeholderTextColor={Colors.textSecondary}
+        secureTextEntry
+      />
+
+      {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+
+      <Pressable
+        style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85 }]}
+        onPress={handleEmailAuth}
+        disabled={loading || !email || !password}
+      >
+        {loading ? (
+          <ActivityIndicator color={Colors.textDark} />
+        ) : (
+          <Text style={styles.primaryBtnText}>{isRegistering ? t('auth.createAccount') : t('auth.signIn')}</Text>
+        )}
+      </Pressable>
+
+      <Pressable onPress={() => { setIsRegistering(!isRegistering); setErrorMsg(''); setEmail(''); setPassword(''); setFirstName(''); setLastName(''); setDateOfBirth(''); }}>
+        <Text style={styles.switchText}>
+          {isRegistering ? t('auth.haveAccountSignIn') : t('auth.noAccountRegister')}
+        </Text>
+      </Pressable>
+
+      {!isRegistering && (
+        <Pressable onPress={() => router.push('/(auth)/forgot-password')}>
+          <Text style={styles.switchText}>{t('auth.forgotPassword')}</Text>
+        </Pressable>
+      )}
+
+      <View style={styles.dividerRow}>
+        <View style={styles.divider} />
+        <Text style={styles.dividerText}>{t('auth.or')}</Text>
+        <View style={styles.divider} />
+      </View>
+
+      <Pressable
+        style={({ pressed }) => [styles.guestBtn, pressed && { opacity: 0.75 }]}
+        onPress={handleGuestMode}
+        disabled={loading}
+      >
+        <MaterialCommunityIcons name="account-outline" size={18} color={Colors.textSecondary} />
+        <Text style={styles.guestBtnText}>{t('auth.continueAsGuest')}</Text>
+      </Pressable>
+      </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: Colors.backgroundDark },
   scrollContent: {
     flexGrow: 1,
-    backgroundColor: Colors.background,
     paddingHorizontal: 28,
     paddingVertical: 48,
     justifyContent: 'center',
@@ -292,11 +197,6 @@ const styles = StyleSheet.create({
   logoContainer: { alignItems: 'center', marginBottom: 4 },
   title: { fontSize: 44, fontFamily: 'Inter_700Bold', color: Colors.gold, textAlign: 'center', letterSpacing: 2 },
   subtitle: { fontSize: 14, fontFamily: 'Inter_400Regular', color: Colors.textSecondary, textAlign: 'center', marginBottom: 8 },
-  googleBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: Colors.white, borderRadius: 12, paddingVertical: 14,
-  },
-  googleBtnText: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.textDark },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   divider: { flex: 1, height: 1, backgroundColor: Colors.whiteAlpha },
   dividerText: { color: Colors.textSecondary, fontSize: 13, fontFamily: 'Inter_400Regular' },
@@ -311,7 +211,6 @@ const styles = StyleSheet.create({
   primaryBtnText: { fontSize: 16, fontFamily: 'Inter_700Bold', color: Colors.textDark },
   switchText: { color: Colors.textSecondary, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
   errorText: { color: Colors.danger, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
-  verifyHint: { color: Colors.textSecondary, fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center' },
   guestBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     borderWidth: 1, borderColor: Colors.whiteAlpha, borderRadius: 12, paddingVertical: 14,

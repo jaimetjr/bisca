@@ -7,7 +7,7 @@ import {
 } from '../../shared/lib/achievements/evaluator';
 
 export interface RecordGameInput extends EvaluatedGame {
-  clerkUserId: string;
+  userId: string;
 }
 
 /**
@@ -18,24 +18,24 @@ export interface RecordGameInput extends EvaluatedGame {
  * achievements directly.
  */
 export async function recordGameAndEvaluate(input: RecordGameInput): Promise<string[]> {
-  const { clerkUserId, result, score, opponentScore, mode } = input;
+  const { userId, result, score, opponentScore, mode } = input;
 
   // Pull the last 4 games BEFORE inserting the current one — these become the
   // "previous games" context for streak-style achievements.
   const previous = await db
     .select({ result: gameHistory.result, mode: gameHistory.mode })
     .from(gameHistory)
-    .where(eq(gameHistory.clerkUserId, clerkUserId))
+    .where(eq(gameHistory.userId, userId))
     .orderBy(desc(gameHistory.playedAt))
     .limit(4);
 
   const alreadyUnlocked = await db
     .select({ achievementId: userAchievements.achievementId })
     .from(userAchievements)
-    .where(eq(userAchievements.clerkUserId, clerkUserId));
+    .where(eq(userAchievements.userId, userId));
 
   await db.insert(gameHistory).values({
-    clerkUserId,
+    userId,
     result,
     score,
     opponentScore,
@@ -55,7 +55,7 @@ export async function recordGameAndEvaluate(input: RecordGameInput): Promise<str
     await db
       .insert(userAchievements)
       .values(
-        newlyUnlocked.map((id) => ({ clerkUserId, achievementId: id })),
+        newlyUnlocked.map((id) => ({ userId, achievementId: id })),
       )
       .onConflictDoNothing();
   }
@@ -63,10 +63,10 @@ export async function recordGameAndEvaluate(input: RecordGameInput): Promise<str
   return newlyUnlocked;
 }
 
-export async function listUnlockedAchievementIds(clerkUserId: string): Promise<string[]> {
+export async function listUnlockedAchievementIds(userId: string): Promise<string[]> {
   const rows = await db
     .select({ achievementId: userAchievements.achievementId })
     .from(userAchievements)
-    .where(eq(userAchievements.clerkUserId, clerkUserId));
+    .where(eq(userAchievements.userId, userId));
   return rows.map((r) => r.achievementId);
 }

@@ -3,7 +3,7 @@ import request from 'supertest';
 import type { Server } from 'node:http';
 import { startTestServer, closeServer, createRoom } from './helpers';
 
-// Mock DB and Clerk so the server starts without a real database.
+// Mock the DB so the server starts without a real database.
 // Builder chain returns an empty array at every reasonable terminal node.
 const emptyArray = Promise.resolve([]);
 function makeChain(): Record<string, unknown> {
@@ -43,10 +43,6 @@ vi.mock('../../server/db', () => ({
     }),
     update: vi.fn(() => makeMutationChain()),
   },
-}));
-
-vi.mock('@clerk/backend', () => ({
-  verifyToken: vi.fn().mockRejectedValue(new Error('Invalid token')),
 }));
 
 let server: Server;

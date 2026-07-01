@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
 import { registerRoutes } from "./routes";
+import { deleteExpiredCodes } from "./lib/auth-codes";
 import { logger } from "./lib/logger";
 import * as fs from "fs";
 import * as path from "path";
@@ -225,6 +226,21 @@ function setupErrorHandler(app: express.Application) {
   const server = await registerRoutes(app);
 
   setupErrorHandler(app);
+
+  // Periodically purge expired one-time auth codes (email verify / reset).
+  // unref() so this timer never keeps the process alive on shutdown.
+  const AUTH_CODE_GC_INTERVAL_MS = 60 * 60 * 1000; // hourly
+  const authCodeGc = setInterval(() => {
+    deleteExpiredCodes()
+      .then((removed) => {
+        if (removed > 0) log.debug({ removed }, 'purged expired auth codes');
+      })
+      .catch((err) => log.error({ err }, 'auth code GC failed'));
+  }, AUTH_CODE_GC_INTERVAL_MS);
+  // unref so this timer never keeps the process alive on shutdown. Cast because
+  // the Expo/RN tsconfig surfaces the DOM setInterval (returns number); at
+  // runtime under Node the handle is a Timeout with unref().
+  (authCodeGc as unknown as { unref?: () => void }).unref?.();
 
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen(port, "0.0.0.0", () => {

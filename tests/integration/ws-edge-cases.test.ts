@@ -9,7 +9,6 @@ import type { ServerMessage } from '../../shared/lib/types/messages';
 import type { GameState } from '../../shared/lib/types';
 
 vi.mock('../../server/db', () => ({ db: {} }));
-vi.mock('@clerk/backend', () => ({ verifyToken: vi.fn() }));
 
 let server: Server;
 let wsUrl: string;
