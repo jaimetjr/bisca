@@ -40,6 +40,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# server build output
+server_dist/
 .claude/settings.local.json
 CLAUDE.md
 .env.development

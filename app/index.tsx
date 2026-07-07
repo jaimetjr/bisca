@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,11 +7,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 import Colors from "@/shared/constants/colors";
 import { t } from '@/shared/i18n';
+import TutorialModal from '@/components/Tutorial';
+import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
 import { useRewards } from '@shared/hooks/useRewards';
 import { useRewardedAd } from '@shared/hooks/useRewardedAd';
+import { useTutorial } from '@shared/hooks/useTutorial';
 
 const BANNER_AD_UNIT_ID = __DEV__
   ? TestIds.BANNER
@@ -24,7 +27,7 @@ export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const topPadding = Platform.OS === 'web' ? 67 : insets.top;
     const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
-    const { isGuest, disableGuestMode } = useGuestMode();
+    const { isGuest, isLoaded: guestLoaded, disableGuestMode } = useGuestMode();
     const { isPremium } = useEntitlement();
     const rewards = useRewards();
     const { isLoaded: rewardedLoaded, showAd: showRewardedAd } = useRewardedAd({
@@ -32,6 +35,22 @@ export default function HomeScreen() {
         disabled: isPremium || Platform.OS === 'web',
     });
     useLanguage(); // subscribe to language changes so t() output updates
+
+    const { seen, isLoaded: tutorialLoaded, markSeen } = useTutorial();
+    const { isLoaded: authLoaded, isSignedIn } = useAuth();
+    const [tutorialVisible, setTutorialVisible] = useState(false);
+    const autoShownRef = useRef(false);
+    useEffect(() => {
+        if (autoShownRef.current) return;
+        if (tutorialLoaded && authLoaded && guestLoaded && (isSignedIn || isGuest) && !seen) {
+            autoShownRef.current = true;
+            setTutorialVisible(true);
+        }
+    }, [tutorialLoaded, authLoaded, guestLoaded, isSignedIn, isGuest, seen]);
+    const closeTutorial = () => {
+        setTutorialVisible(false);
+        if (!seen) void markSeen();
+    };
 
     const handleCreateAccount = async () => {
         await disableGuestMode();
@@ -126,10 +145,15 @@ export default function HomeScreen() {
                 </Pressable>
             </View>
 
-            <View style={styles.rulesCard}>
-                <MaterialCommunityIcons name="information-outline" size={18} color={Colors.gold} />
+            <Pressable
+                style={({ pressed }) => [styles.rulesCard, pressed && { opacity: 0.85 }]}
+                onPress={() => setTutorialVisible(true)}
+                testID="how-to-play-btn"
+            >
+                <MaterialCommunityIcons name="book-open-variant" size={18} color={Colors.gold} />
                 <Text style={styles.rulesText}>{t('home.rules')}</Text>
-            </View>
+                <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textSecondary} />
+            </Pressable>
 
             {showRewardedTile && (
                 <Pressable
@@ -183,6 +207,8 @@ export default function HomeScreen() {
                     </View>
                 </View>
             </View>
+
+            <TutorialModal visible={tutorialVisible} onClose={closeTutorial} />
         </View>
     )
 }
