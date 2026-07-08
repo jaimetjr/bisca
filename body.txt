@@ -1,0 +1,1 @@
+<!doctype html><meta charset="utf-8"><title>App Landing Page</title><body style="font-family:system-ui;background:#1a472a;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0"><div style="text-align:center"><h1>App Landing Page</h1><p style="opacity:.7">API server is running.</p></div>

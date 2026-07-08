@@ -152,7 +152,16 @@ function configureExpoAndLanding(app: express.Application) {
     "templates",
     "landing-page.html",
   );
-  const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
+  let landingPageTemplate: string | null = null;
+  try {
+    landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
+  } catch {
+    // The landing page is an optional presentation asset. Bundled deploy
+    // images (e.g. Railway running server_dist without the source tree) may
+    // not ship the template — fall back to a minimal page instead of
+    // crashing the whole server at boot.
+    log.warn({ templatePath }, "landing page template missing; serving fallback");
+  }
   const appName = getAppName();
 
   log.info('Serving static Expo files with dynamic manifest routing');
@@ -172,12 +181,25 @@ function configureExpoAndLanding(app: express.Application) {
     }
 
     if (req.path === "/") {
-      return serveLandingPage({
-        req,
-        res,
-        landingPageTemplate,
-        appName,
-      });
+      if (landingPageTemplate) {
+        return serveLandingPage({
+          req,
+          res,
+          landingPageTemplate,
+          appName,
+        });
+      }
+      // Minimal fallback so `/` still returns 200 (useful as a healthcheck).
+      return res
+        .status(200)
+        .type("html")
+        .send(
+          `<!doctype html><meta charset="utf-8"><title>${appName}</title>` +
+            `<body style="font-family:system-ui;background:#1a472a;color:#fff;` +
+            `display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0">` +
+            `<div style="text-align:center"><h1>${appName}</h1>` +
+            `<p style="opacity:.7">API server is running.</p></div>`,
+        );
     }
 
     next();
