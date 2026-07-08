@@ -14,6 +14,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_DOMAIN": "bisca-production.up.railway.app",
         "ADMOB_APP_ID_ANDROID": "ca-app-pub-9412542080032324~2646223135",
         "EXPO_PUBLIC_ADMOB_BANNER_ANDROID": "ca-app-pub-9412542080032324/5595774317",
         "EXPO_PUBLIC_ADMOB_INTERSTITIAL_ANDROID": "ca-app-pub-9412542080032324/2641096461",
@@ -23,6 +24,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
+        "EXPO_PUBLIC_DOMAIN": "bisca-production.up.railway.app",
         "ADMOB_APP_ID_ANDROID": "ca-app-pub-9412542080032324~2646223135",
         "EXPO_PUBLIC_ADMOB_BANNER_ANDROID": "ca-app-pub-9412542080032324/5595774317",
         "EXPO_PUBLIC_ADMOB_INTERSTITIAL_ANDROID": "ca-app-pub-9412542080032324/2641096461",

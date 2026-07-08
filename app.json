@@ -26,7 +26,6 @@
     },
     "android": {
       "package": "com.brisca",
-      "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "backgroundColor": "#1E6F3F",
