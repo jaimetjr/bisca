@@ -77,17 +77,11 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// Defense-in-depth for the hard email-verification gate: data endpoints reject
-// unverified users even if the client guard is bypassed. Must run after
-// requireAuth. (The token's `ev` claim can lag a fresh verification by one
-// token issuance, which only causes a self-healing false negative.)
-function requireVerified(req: Request, res: Response, next: NextFunction) {
-  if (!req.emailVerified) {
-    res.status(403).json({ error: 'Email not verified', code: 'EMAIL_NOT_VERIFIED' });
-    return;
-  }
-  next();
-}
+// Email verification is optional for v1: real verification emails require a
+// verified sending domain (Resend), which isn't configured yet. Data endpoints
+// use requireAuth only. Re-add a requireVerified gate here once email delivery
+// is live if unverified-account abuse becomes a concern. The token still carries
+// the `ev` claim, so re-gating is a one-line change per route.
 
 export async function registerRoutes(app: Express): Promise<Server> {
     app.get("/api/health", (_req, res) => {
@@ -311,7 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    app.post("/api/auth/change-password", requireAuth, requireVerified, async (req: Request, res: Response) => {
+    app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
         const { currentPassword, newPassword } = req.body ?? {};
@@ -380,7 +374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
     });
 
-    app.get("/api/stats", requireAuth, requireVerified, async (req: Request, res: Response) => {
+    app.get("/api/stats", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
         const [agg, recent] = await Promise.all([
@@ -423,7 +417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    app.post("/api/users/profile", requireAuth, requireVerified, async (req: Request, res: Response) => {
+    app.post("/api/users/profile", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
         const { firstName, lastName, dateOfBirth } = req.body ?? {};
@@ -451,7 +445,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    app.post("/api/game-history", requireAuth, requireVerified, async (req: Request, res: Response) => {
+    app.post("/api/game-history", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
         const { result, score, opponentScore, mode } = req.body;
@@ -485,7 +479,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    app.get("/api/quests/today", requireAuth, requireVerified, async (req: Request, res: Response) => {
+    app.get("/api/quests/today", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
         const { date, quests } = await getTodaysQuests(userId);
@@ -509,7 +503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    app.post("/api/quests/claim", requireAuth, requireVerified, async (req: Request, res: Response) => {
+    app.post("/api/quests/claim", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
         const { questId } = req.body ?? {};
@@ -532,7 +526,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    app.get("/api/achievements", requireAuth, requireVerified, async (req: Request, res: Response) => {
+    app.get("/api/achievements", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
         const unlockedIds = await listUnlockedAchievementIds(userId);
