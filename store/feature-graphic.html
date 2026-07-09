@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: 'InterBold';
+    src: url('file:///c:/Users/Junior/Dev/study/bisca/node_modules/@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf');
+  }
+  @font-face {
+    font-family: 'InterMed';
+    src: url('file:///c:/Users/Junior/Dev/study/bisca/node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf');
+  }
+  html, body { margin: 0; }
+  .canvas {
+    width: 1024px; height: 500px;
+    background: radial-gradient(120% 120% at 30% 20%, #2a7a4a 0%, #1E6F3F 45%, #123321 100%);
+    display: flex; align-items: center; gap: 40px;
+    padding: 0 72px; box-sizing: border-box;
+    overflow: hidden; position: relative;
+  }
+  .cardwrap { flex-shrink: 0; filter: drop-shadow(0 16px 28px rgba(0,0,0,0.4)); }
+  .text { display: flex; flex-direction: column; }
+  .title {
+    font-family: 'InterBold'; font-size: 128px; color: #E4B94C;
+    letter-spacing: 6px; line-height: 1; margin: 0;
+  }
+  .tagline {
+    font-family: 'InterMed'; font-size: 34px; color: #eaf3ee;
+    margin: 22px 0 0; opacity: 0.92;
+  }
+  .chips { display: flex; gap: 14px; margin-top: 30px; }
+  .chip {
+    font-family: 'InterMed'; font-size: 22px; color: #dfeee6;
+    border: 1px solid rgba(255,255,255,0.35); border-radius: 999px;
+    padding: 8px 20px;
+  }
+  /* faint suit watermark */
+  .wm { position: absolute; right: -60px; bottom: -80px; opacity: 0.06; }
+</style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="cardwrap">
+      <img src="file:///c:/Users/Junior/Dev/study/bisca/assets/brand/card-only.svg" width="300" height="300">
+    </div>
+    <div class="text">
+      <h1 class="title">BRISCA</h1>
+      <p class="tagline">The classic Spanish card game</p>
+      <div class="chips">
+        <span class="chip">1v1 &amp; 2v2</span>
+        <span class="chip">vs AI &amp; Online</span>
+        <span class="chip">12 languages</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -141,17 +141,20 @@ describe('POST /api/auth/login', () => {
   });
 });
 
-describe('email-verification gate (requireVerified)', () => {
+// Email verification is optional for v1 (the requireVerified gate was removed
+// until a verified sending domain is configured). Data endpoints require only
+// a valid token, verified or not.
+describe('data endpoints require auth only (email verification optional in v1)', () => {
   it('GET /api/stats → 401 without a token', async () => {
     const res = await request(server).get('/api/stats');
     expect(res.status).toBe(401);
   });
 
-  it('GET /api/stats → 403 with an unverified token', async () => {
+  it('GET /api/stats → 200 with an unverified token', async () => {
     const token = await signAuthToken('user-x', false);
     const res = await request(server).get('/api/stats').set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('EMAIL_NOT_VERIFIED');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('wins');
   });
 
   it('GET /api/stats → 200 with a verified token', async () => {
@@ -161,13 +164,14 @@ describe('email-verification gate (requireVerified)', () => {
     expect(res.body).toHaveProperty('wins');
   });
 
-  it('POST /api/game-history → 403 with an unverified token', async () => {
+  it('POST /api/game-history → 200 with an unverified token', async () => {
     const token = await signAuthToken('user-x', false);
     const res = await request(server)
       .post('/api/game-history')
       .set('Authorization', `Bearer ${token}`)
       .send({ result: 'win', score: 61, opponentScore: 30, mode: 'ai' });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('ok', true);
   });
 });
 

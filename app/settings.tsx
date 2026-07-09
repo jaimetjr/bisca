@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Platform, Pressable, ScrollView, Alert, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -12,6 +12,14 @@ import type { AIDifficulty } from '@/shared/lib/types';
 import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
+import { getApiUrl } from '@shared/query-client';
+import DeleteAccountModal from '@/components/DeleteAccountModal';
+
+// Legal pages are served by the same Express server as the API, so derive their
+// URLs from the same source of truth (EXPO_PUBLIC_DOMAIN via getApiUrl) rather
+// than hardcoding the host. getApiUrl() returns a trailing-slash base.
+const PRIVACY_URL = `${getApiUrl()}privacy`;
+const TERMS_URL = `${getApiUrl()}terms`;
 
 const DIFFICULTY_OPTIONS: AIDifficulty[] = ['easy', 'medium', 'hard'];
 const SPEED_OPTIONS: AppSettings['gameSpeed'][] = ['slow', 'normal', 'fast'];
@@ -35,6 +43,7 @@ export default function SettingsScreen() {
   const [signingOut, setSigningOut] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [deleteVisible, setDeleteVisible] = useState(false);
 
   const handlePurchase = async () => {
     setPurchasing(true);
@@ -218,7 +227,43 @@ export default function SettingsScreen() {
             {isGuest ? t('settings.leaveGuestMode') : t('settings.signOut')}
           </Text>
         </Pressable>
+
+        {!isGuest && (
+          <Pressable
+            style={({ pressed }) => [styles.signOutBtn, pressed && { opacity: 0.75 }]}
+            onPress={() => setDeleteVisible(true)}
+            testID="settings-delete-account"
+          >
+            <MaterialCommunityIcons name="delete-outline" size={18} color={Colors.danger} />
+            <Text style={styles.signOutText}>{t('settings.deleteAccount')}</Text>
+          </Pressable>
+        )}
+
+        {/* Legal */}
+        <Text style={styles.sectionHeader}>{t('settings.legal')}</Text>
+
+        <Pressable
+          style={({ pressed }) => [styles.accountBtn, pressed && { opacity: 0.75 }]}
+          onPress={() => Linking.openURL(PRIVACY_URL)}
+          testID="settings-privacy"
+        >
+          <MaterialCommunityIcons name="shield-lock-outline" size={18} color={Colors.white} />
+          <Text style={styles.accountBtnText}>{t('settings.privacyPolicy')}</Text>
+          <MaterialCommunityIcons name="open-in-new" size={16} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [styles.accountBtn, pressed && { opacity: 0.75 }]}
+          onPress={() => Linking.openURL(TERMS_URL)}
+          testID="settings-terms"
+        >
+          <MaterialCommunityIcons name="file-document-outline" size={18} color={Colors.white} />
+          <Text style={styles.accountBtnText}>{t('settings.terms')}</Text>
+          <MaterialCommunityIcons name="open-in-new" size={16} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
+        </Pressable>
       </ScrollView>
+
+      <DeleteAccountModal visible={deleteVisible} onClose={() => setDeleteVisible(false)} />
     </View>
   );
 }

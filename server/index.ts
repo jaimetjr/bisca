@@ -5,6 +5,12 @@ import pinoHttp from "pino-http";
 import { registerRoutes } from "./routes";
 import { deleteExpiredCodes } from "./lib/auth-codes";
 import { logger } from "./lib/logger";
+import {
+  PRIVACY_HTML,
+  TERMS_HTML,
+  ACCOUNT_DELETION_HTML,
+  APP_ADS_TXT,
+} from "./lib/legal-content";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -232,6 +238,18 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
+function setupLegalPages(app: express.Application) {
+  // Public compliance pages required for the Play Store listing + AdMob.
+  // Content is bundled (see server/lib/legal-content.ts), so these serve
+  // correctly even on deploy images that omit the source tree.
+  app.get("/privacy", (_req, res) => res.type("html").send(PRIVACY_HTML));
+  app.get("/terms", (_req, res) => res.type("html").send(TERMS_HTML));
+  app.get("/account-deletion", (_req, res) =>
+    res.type("html").send(ACCOUNT_DELETION_HTML),
+  );
+  app.get("/app-ads.txt", (_req, res) => res.type("text/plain").send(APP_ADS_TXT));
+}
+
 (async () => {
   app.use(
     helmet({
@@ -243,6 +261,7 @@ function setupErrorHandler(app: express.Application) {
   setupBodyParsing(app);
   setupRequestLogging(app);
 
+  setupLegalPages(app);
   configureExpoAndLanding(app);
 
   const server = await registerRoutes(app);
