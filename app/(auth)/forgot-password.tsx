@@ -7,6 +7,8 @@ import Colors from '@/shared/constants/colors';
 import { useAuth } from '@shared/hooks/useAuth';
 import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
+import { validatePassword } from '@shared/lib/validation/password';
+import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
 
 export default function ForgotPasswordScreen() {
   const { requestPasswordReset, resetPassword } = useAuth();
@@ -38,8 +40,16 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleReset = async () => {
-    setLoading(true);
     setErrorMsg('');
+    if (code.length < 6) {
+      setErrorMsg(t('auth.errInvalidCode'));
+      return;
+    }
+    if (!validatePassword(newPassword, { email: email.trim() }).ok) {
+      setErrorMsg(t('auth.errPasswordWeak'));
+      return;
+    }
+    setLoading(true);
     try {
       const result = await resetPassword(email.trim(), code.trim(), newPassword);
       if (!result.ok) {
@@ -99,6 +109,7 @@ export default function ForgotPasswordScreen() {
             placeholderTextColor={Colors.textSecondary}
             secureTextEntry
           />
+          <PasswordStrengthMeter password={newPassword} context={{ email }} />
         </>
       )}
 
@@ -116,7 +127,7 @@ export default function ForgotPasswordScreen() {
         <Pressable
           style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85 }]}
           onPress={handleReset}
-          disabled={loading || code.length < 6 || newPassword.length < 8}
+          disabled={loading}
         >
           {loading ? <ActivityIndicator color={Colors.textDark} /> : <Text style={styles.primaryBtnText}>{t('auth.resetPassword')}</Text>}
         </Pressable>

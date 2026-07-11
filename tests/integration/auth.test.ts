@@ -5,6 +5,7 @@ import { startTestServer, closeServer } from './helpers';
 // Note: these resolve to the mocked modules below — vitest hoists vi.mock().
 import { signAuthToken, verifyAuthToken } from '../../server/lib/auth';
 import { verifyCode } from '../../server/lib/auth-codes';
+import { isPasswordPwned } from '../../server/lib/password-policy';
 
 // requireAuth/signAuthToken need a secret; set one before the auth module reads it.
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'test-jwt-secret-at-least-16-chars';
@@ -60,6 +61,10 @@ vi.mock('../../server/lib/auth-codes', () => ({
   issueCode: vi.fn(async () => '123456'),
   verifyCode: vi.fn(async () => ({ ok: true })),
 }));
+// Never hit the real HIBP network in tests; default to "not breached".
+vi.mock('../../server/lib/password-policy', () => ({
+  isPasswordPwned: vi.fn(async () => false),
+}));
 
 let server: Server;
 
@@ -94,7 +99,7 @@ describe('token helpers (auth.ts)', () => {
 describe('POST /api/auth/register', () => {
   const valid = {
     email: 'new@example.com',
-    password: 'longenough1',
+    password: 'Longenough1',
     firstName: 'Ada',
     lastName: 'Lovelace',
     dateOfBirth: '1990-01-01',
@@ -106,8 +111,23 @@ describe('POST /api/auth/register', () => {
   });
 
   it('rejects a too-short password', async () => {
-    const res = await request(server).post('/api/auth/register').send({ ...valid, password: 'short' });
+    const res = await request(server).post('/api/auth/register').send({ ...valid, password: 'Short1' });
     expect(res.status).toBe(400);
+  });
+
+  it('rejects a password missing an uppercase letter', async () => {
+    const res = await request(server).post('/api/auth/register').send({ ...valid, password: 'longenough1' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('weak_password');
+  });
+
+  it('rejects a breached password', async () => {
+    vi.mocked(isPasswordPwned).mockResolvedValueOnce(true);
+    const res = await request(server)
+      .post('/api/auth/register')
+      .send({ ...valid, email: 'fresh@example.com', password: 'Notbreached9' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('password_pwned');
   });
 
   it('rejects a missing name', async () => {
@@ -247,8 +267,18 @@ describe('POST /api/auth/reset-password', () => {
   it('returns 400 for a too-short password', async () => {
     const res = await request(server)
       .post('/api/auth/reset-password')
-      .send({ email: 'a@b.com', code: '123456', newPassword: 'short' });
+      .send({ email: 'a@b.com', code: '123456', newPassword: 'Short1' });
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe('weak_password');
+  });
+
+  it('returns 400 for a breached password', async () => {
+    vi.mocked(isPasswordPwned).mockResolvedValueOnce(true);
+    const res = await request(server)
+      .post('/api/auth/reset-password')
+      .send({ email: 'a@b.com', code: '123456', newPassword: 'Notbreached9' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('password_pwned');
   });
 });
 
@@ -291,7 +321,7 @@ describe('rate limiting', () => {
   });
 
   it('throttles repeated registrations from one IP (429)', async () => {
-    const body = { email: 'flood@example.com', password: 'longenough1', firstName: 'A', lastName: 'B', dateOfBirth: '1990-01-01' };
+    const body = { email: 'flood@example.com', password: 'Longenough1', firstName: 'A', lastName: 'B', dateOfBirth: '1990-01-01' };
     let last = 0;
     for (let i = 0; i < 11; i++) {
       const res = await request(server)

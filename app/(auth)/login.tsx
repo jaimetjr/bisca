@@ -9,6 +9,8 @@ import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { isAtLeast18, dobToISO, formatLocaleDate, getLocaleDatePlaceholder } from '@shared/lib/date';
 import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
+import { validatePassword } from '@shared/lib/validation/password';
+import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
 
 export default function LoginScreen() {
   const { signIn, signUp } = useAuth();
@@ -40,6 +42,10 @@ export default function LoginScreen() {
         }
         if (!isAtLeast18(dateOfBirth)) {
           setErrorMsg(t('auth.errUnder18'));
+          return;
+        }
+        if (!validatePassword(password, { email: email.trim(), firstName: firstName.trim(), lastName: lastName.trim() }).ok) {
+          setErrorMsg(t('auth.errPasswordWeak'));
           return;
         }
         const result = await signUp({
@@ -138,6 +144,13 @@ export default function LoginScreen() {
         placeholderTextColor={Colors.textSecondary}
         secureTextEntry
       />
+
+      {isRegistering && (
+        <PasswordStrengthMeter
+          password={password}
+          context={{ email, firstName, lastName }}
+        />
+      )}
 
       {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
 

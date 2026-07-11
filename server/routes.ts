@@ -22,12 +22,13 @@ import {
   getTodaysQuests,
 } from './lib/quest-service';
 import { logger } from './lib/logger';
+import { validatePassword, type PasswordContext } from '../shared/lib/validation/password';
+import { isPasswordPwned } from './lib/password-policy';
 
 const log = logger.child({ module: 'routes' });
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MIN_PASSWORD_LENGTH = 8;
 
 // Throttle code emails so the endpoints can't be used to spam an inbox or
 // brute-force: at most 5 code requests per 15 min per key (userId or email).
@@ -83,6 +84,38 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 // is live if unverified-account abuse becomes a concern. The token still carries
 // the `ev` claim, so re-gating is a one-line change per route.
 
+// Keep only the string fields so the pure validator never sees a non-string.
+function passwordContext(raw: {
+  email?: unknown;
+  firstName?: unknown;
+  lastName?: unknown;
+}): PasswordContext {
+  const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+  return { email: str(raw.email), firstName: str(raw.firstName), lastName: str(raw.lastName) };
+}
+
+/**
+ * Server-side password gate shared by register / reset / change-password.
+ * Sends a 400 and returns true when the password is rejected (weak or breached);
+ * the caller must `return` in that case. Error codes (`weak_password`,
+ * `password_pwned`) are language-neutral — the client localizes them.
+ */
+async function rejectInvalidPassword(
+  res: Response,
+  password: unknown,
+  ctx: PasswordContext,
+): Promise<boolean> {
+  if (typeof password !== 'string' || !validatePassword(password, ctx).ok) {
+    res.status(400).json({ error: 'weak_password' });
+    return true;
+  }
+  if (await isPasswordPwned(password)) {
+    res.status(400).json({ error: 'password_pwned' });
+    return true;
+  }
+  return false;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
     app.get("/api/health", (_req, res) => {
         res.json({ status: "ok" });
@@ -99,10 +132,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.status(400).json({ error: 'A valid email is required' });
           return;
         }
-        if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
-          res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
-          return;
-        }
         if (typeof firstName !== 'string' || !firstName.trim() ||
             typeof lastName !== 'string' || !lastName.trim()) {
           res.status(400).json({ error: 'First and last name are required' });
@@ -110,6 +139,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         if (typeof dateOfBirth !== 'string' || !isAtLeast18ISO(dateOfBirth)) {
           res.status(400).json({ error: 'You must be at least 18 years old' });
+          return;
+        }
+        if (await rejectInvalidPassword(res, password, passwordContext({ email, firstName, lastName }))) {
           return;
         }
 
@@ -275,8 +307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.status(400).json({ error: 'Invalid email or code' });
           return;
         }
-        if (typeof newPassword !== 'string' || newPassword.length < MIN_PASSWORD_LENGTH) {
-          res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+        if (await rejectInvalidPassword(res, newPassword, passwordContext({ email }))) {
           return;
         }
         const normalizedEmail = email.trim().toLowerCase();
@@ -309,10 +340,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const userId = req.userId!;
         const { currentPassword, newPassword } = req.body ?? {};
-        if (typeof newPassword !== 'string' || newPassword.length < MIN_PASSWORD_LENGTH) {
-          res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
-          return;
-        }
         const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) {
           res.status(404).json({ error: 'User not found' });
@@ -320,6 +347,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         if (typeof currentPassword !== 'string' || !(await verifyPassword(currentPassword, user.passwordHash))) {
           res.status(401).json({ error: 'Current password is incorrect' });
+          return;
+        }
+        if (await rejectInvalidPassword(res, newPassword, passwordContext({
+          email: user.email, firstName: user.firstName, lastName: user.lastName,
+        }))) {
           return;
         }
         await db.update(users)

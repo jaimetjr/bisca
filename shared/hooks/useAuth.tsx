@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Buffer } from 'buffer';
 import { getApiUrl } from '@/shared/query-client';
+import { t } from '@/shared/i18n';
 
 // Self-hosted auth, replacing Clerk. A single JWT (issued by the Express
 // server) is persisted on the device; its `sub` claim is the user id. The
@@ -116,6 +117,8 @@ function friendlyError(code: unknown): string {
     case 'invalid': return 'That code is incorrect';
     case 'expired': return 'That code has expired — request a new one';
     case 'too_many_attempts': return 'Too many attempts — request a new code';
+    case 'weak_password': return t('auth.errPasswordWeak');
+    case 'password_pwned': return t('auth.errPasswordPwned');
     default: return typeof code === 'string' && code ? code : 'Something went wrong';
   }
 }
