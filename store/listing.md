@@ -39,6 +39,6 @@ Website: https://bisca-production.up.railway.app
 Privacy policy: https://bisca-production.up.railway.app/privacy
 
 ## Assets checklist
-- App icon: assets/images/icon.png (512×512 export required by Console — resize from the 1024 source)
+- App icon: store/icon-512.png (512×512, exported from the 1024 assets/images/icon.png source) ✓
 - Feature graphic: store/feature-graphic.png (1024×500) ✓
 - Phone screenshots: store/screenshots/*.png (860×1864) ✓ — upload at least 2; 3 provided

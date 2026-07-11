@@ -8,6 +8,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
 import { isAtLeast18, dobToISO } from '@shared/lib/date';
 import { getApiUrl } from '@shared/query-client';
+import { validatePassword } from '@shared/lib/validation/password';
+import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
 
 function isoToDob(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -103,7 +105,10 @@ export default function ProfileScreen() {
     if (!currentPassword) { setChangePasswordError('Enter your current password'); return; }
     if (!changeNewPassword) { setChangePasswordError('Enter a new password'); return; }
     if (changeNewPassword !== changeConfirmPassword) { setChangePasswordError('Passwords do not match'); return; }
-    if (changeNewPassword.length < 8) { setChangePasswordError('Password must be at least 8 characters'); return; }
+    if (!validatePassword(changeNewPassword, { email, firstName, lastName }).ok) {
+      setChangePasswordError('Password does not meet the requirements');
+      return;
+    }
     setChangePasswordSaving(true);
     try {
       const token = await getToken();
@@ -228,6 +233,10 @@ export default function ProfileScreen() {
               placeholder="New password"
               placeholderTextColor={Colors.textSecondary}
               secureTextEntry
+            />
+            <PasswordStrengthMeter
+              password={changeNewPassword}
+              context={{ email, firstName, lastName }}
             />
             <TextInput
               style={styles.input}
