@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.brisca"
+      "bundleIdentifier": "com.jaimetjr.bisca"
     },
     "androidNavigationBar": {
       "barStyle": "light-content",
@@ -25,7 +25,7 @@
       "backgroundColor": "#0f2d1a"
     },
     "android": {
-      "package": "com.brisca",
+      "package": "com.jaimetjr.bisca",
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "backgroundColor": "#1E6F3F",
