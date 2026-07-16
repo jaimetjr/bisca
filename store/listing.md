@@ -124,5 +124,6 @@ Privacy policy: https://bisca-production.up.railway.app/privacy
 
 ## Assets checklist
 - App icon: store/icon-512.png (512×512, exported from the 1024 assets/images/icon.png source) ✓
-- Feature graphic: store/feature-graphic.png (1024×500) ✓
+- Feature graphic (PT default): store/feature-graphic-pt.png (1024×500) ✓ — "BISCA / O clássico jogo de cartas"
+- Feature graphic (ES/EN localizations): store/feature-graphic.png (1024×500) ✓ — "BRISCA / The classic Spanish card game"
 - Phone screenshots: store/screenshots/*.png (860×1864) ✓ — upload at least 2; 3 provided

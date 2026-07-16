@@ -6,6 +6,7 @@ import {
   AdEventType,
   TestIds,
 } from 'react-native-google-mobile-ads';
+import { reportAdLoadError, reportAdGiveUp } from '@shared/lib/ad-monitoring';
 
 const AD_UNIT_ID = __DEV__
   ? TestIds.REWARDED
@@ -83,13 +84,18 @@ export function useRewardedAd({ onEarned, disabled = false }: UseRewardedAdOptio
       loadNext.current();
     });
 
-    ad.addAdEventListener(AdEventType.ERROR, () => {
+    ad.addAdEventListener(AdEventType.ERROR, (error) => {
       if (mountedRef.current) setIsLoaded(false);
       adRef.current = null;
+      reportAdLoadError('rewarded', error);
       // Bounded retry with exponential backoff: a transient failure (no fill,
       // flaky network) recovers on its own, but we stop after MAX_LOAD_RETRIES
       // so a persistent error never turns into an infinite request loop.
-      if (!mountedRef.current || retryCountRef.current >= MAX_LOAD_RETRIES) return;
+      if (!mountedRef.current) return;
+      if (retryCountRef.current >= MAX_LOAD_RETRIES) {
+        reportAdGiveUp('rewarded', error);
+        return;
+      }
       const delay = BASE_RETRY_DELAY_MS * 2 ** retryCountRef.current;
       retryCountRef.current += 1;
       retryTimerRef.current = setTimeout(() => {

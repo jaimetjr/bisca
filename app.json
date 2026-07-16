@@ -43,6 +43,14 @@
       "expo-localization",
       "expo-secure-store",
       [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "organization": "jtj-tecnologia-da-informacao",
+          "project": "bisca-app"
+        }
+      ],
+      [
         "react-native-google-mobile-ads",
         {
           "androidAppId": "ca-app-pub-3940256099942544~3347511713",

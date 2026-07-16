@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
+import { reportAdLoadError, reportAdGiveUp } from '@shared/lib/ad-monitoring';
 import { useRewards } from './useRewards';
 
 const AD_UNIT_ID = __DEV__
@@ -40,6 +41,15 @@ export function useInterstitialAd(isPremium: boolean) {
       isLoadedRef.current = false;
       adRef.current = null;
       loadNext.current(); // preload next ad immediately after dismiss
+    });
+
+    // There is no retry system here (a missed interstitial is low-stakes), so
+    // a single failure IS the give-up: report it as a Sentry event.
+    ad.addAdEventListener(AdEventType.ERROR, (error) => {
+      isLoadedRef.current = false;
+      adRef.current = null;
+      reportAdLoadError('interstitial', error);
+      reportAdGiveUp('interstitial', error);
     });
 
     adRef.current = ad;

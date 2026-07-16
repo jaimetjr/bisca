@@ -24,8 +24,15 @@ function parseSender(value: string): { name: string; email: string } {
 async function sendEmail(to: string, subject: string, html: string, devCode?: string): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
+    if (process.env.NODE_ENV === 'production') {
+      // Misconfiguration alarm: without the key, emails silently never send
+      // and users can't verify accounts. error-level → forwarded to Sentry by
+      // the logger hook. Never log the code or recipient in production.
+      log.error({ subject }, 'BREVO_API_KEY missing in production — email NOT sent');
+      return;
+    }
     // Dev fallback: no key configured, so surface the code locally instead of
-    // sending. NEVER reached in production where the key is set.
+    // sending.
     log.warn({ to, subject, code: devCode }, 'BREVO_API_KEY not set — logging code instead of sending');
     return;
   }

@@ -15,6 +15,7 @@ import { useEntitlement } from '@shared/hooks/useEntitlement';
 import { useRewards } from '@shared/hooks/useRewards';
 import { useRewardedAd } from '@shared/hooks/useRewardedAd';
 import { useTutorial } from '@shared/hooks/useTutorial';
+import { reportAdLoadError, reportAdGiveUp } from '@shared/lib/ad-monitoring';
 
 const BANNER_AD_UNIT_ID = __DEV__
   ? TestIds.BANNER
@@ -184,6 +185,11 @@ export default function HomeScreen() {
                     <BannerAd
                         unitId={BANNER_AD_UNIT_ID}
                         size={BannerAdSize.BANNER}
+                        onAdFailedToLoad={(error) => {
+                            // No retry for the banner — one failure is the give-up.
+                            reportAdLoadError('banner', error);
+                            reportAdGiveUp('banner', error);
+                        }}
                     />
                 </View>
             )}

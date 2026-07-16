@@ -1,3 +1,7 @@
+// Sentry must initialize before everything else (see instrument.ts). Error
+// capture itself happens via the logger hook in lib/logger.ts — every
+// log.error/log.fatal forwards to Sentry, so no per-route wiring is needed.
+import "./lib/instrument";
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
