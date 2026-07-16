@@ -5,13 +5,26 @@ import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_7
 import { View, Platform } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import mobileAds from 'react-native-google-mobile-ads';
+import * as Sentry from '@sentry/react-native';
 import Colors from '@/shared/constants/colors';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthProvider, useAuth } from '@shared/hooks/useAuth';
 import { GuestModeProvider, useGuestMode } from '@shared/hooks/useGuestMode';
 import { LanguageProvider } from '@shared/hooks/useLanguage';
 import { queryClient } from '@/shared/query-client';
 import { EntitlementProvider } from '@shared/hooks/useEntitlement';
 import { RewardsProvider } from '@shared/hooks/useRewards';
+
+// Crash/error reporting. The DSN is a public identifier (safe to embed) and is
+// only set for EAS preview/production builds via eas.json — `enabled` keeps dev
+// runs and DSN-less builds silent. tracesSampleRate 0 = errors only, no perf
+// tracing; sendDefaultPii false = never attach user identifiers automatically.
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+  enabled: !__DEV__ && !!process.env.EXPO_PUBLIC_SENTRY_DSN,
+  sendDefaultPii: false,
+  tracesSampleRate: 0,
+});
 
 // Initialize AdMob once on startup (no-op on web). Register test devices FIRST
 // so that even with real ad-unit IDs, our own devices keep getting TEST ads —
@@ -86,7 +99,7 @@ function AppWithEntitlement() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -99,14 +112,25 @@ export default function RootLayout() {
   }
 
   return (
-    <LanguageProvider>
-      <QueryClientProvider client={queryClient}>
-        <GuestModeProvider>
-          <AuthProvider>
-            <AppWithEntitlement />
-          </AuthProvider>
-        </GuestModeProvider>
-      </QueryClientProvider>
-    </LanguageProvider>
+    <ErrorBoundary
+      onError={(error, componentStack) =>
+        Sentry.captureException(error, { extra: { componentStack } })
+      }
+    >
+      <LanguageProvider>
+        <QueryClientProvider client={queryClient}>
+          <GuestModeProvider>
+            <AuthProvider>
+              <AppWithEntitlement />
+            </AuthProvider>
+          </GuestModeProvider>
+        </QueryClientProvider>
+      </LanguageProvider>
+    </ErrorBoundary>
   );
 }
+
+// Sentry.wrap adds the outermost error handler (catches errors the render-tree
+// ErrorBoundary above can't, e.g. in the providers themselves) and native-crash
+// context. No-op while Sentry is disabled (dev / DSN-less builds).
+export default Sentry.wrap(RootLayout);

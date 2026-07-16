@@ -1,7 +1,9 @@
 const path = require("path");
-const { getDefaultConfig } = require("expo/metro-config");
+// Sentry's wrapper around expo/metro-config: same config shape, plus debug-ID
+// injection + source-map handling so production stack traces are readable.
+const { getSentryExpoConfig } = require("@sentry/react-native/metro");
 
-const config = getDefaultConfig(__dirname);
+const config = getSentryExpoConfig(__dirname);
 
 config.resolver.extraNodeModules = {
   buffer: require.resolve("buffer/"),
