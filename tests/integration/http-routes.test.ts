@@ -148,3 +148,24 @@ describe('GET /api/leaderboard (public)', () => {
     expect(res.body.period).toBe('all');
   });
 });
+
+describe('GET /join/:code (invite landing page)', () => {
+  it('renders the invite page with code, deep link, and store link', async () => {
+    const res = await request(server).get('/join/wdak7');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    // Code is normalized to uppercase and shown for manual entry
+    expect(res.text).toContain('WDAK7');
+    // "Open in app" deep link (expo triple-slash form)
+    expect(res.text).toContain('bisca:///join?code=WDAK7');
+    // "Get the app" store link
+    expect(res.text).toContain('play.google.com/store/apps/details?id=com.jaimetjr.bisca');
+  });
+
+  it('rejects malformed codes with 404', async () => {
+    for (const bad of ['abc', 'toolong7', 'WD%20K7', '<script>']) {
+      const res = await request(server).get(`/join/${bad}`);
+      expect(res.status, `code: ${bad}`).toBe(404);
+    }
+  });
+});

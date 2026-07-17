@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Platform, Pressable, ActivityIndicator, Alert, Share } from 'react-native';
-import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -40,9 +39,10 @@ export default function OnlineLobbyScreen() {
   const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleShare = async () => {
-    const link = Linking.createURL('/online-lobby', {
-      queryParams: { action: 'join', roomCode: roomId },
-    });
+    // HTTPS link to our own server: clickable in email/chat, opens the app
+    // when installed, and shows a get-the-app page otherwise. A raw bisca://
+    // scheme URL is not linkified by mail clients and dead-ends without the app.
+    const link = `${getApiUrl()}join/${roomId}`;
     await Share.share({
       message: `${t('lobby.shareMessage', { code: roomId })}\n${link}`,
       title: t('lobby.shareInvite'),

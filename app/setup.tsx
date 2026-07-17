@@ -23,7 +23,7 @@ const TAB_ICONS: Record<OnlineMode, { default: string; active: string }> = {
 };
 
 export default function SetupScreen() {
-  const { mode } = useLocalSearchParams<{ mode: string }>();
+  const { mode, roomCode: invitedRoomCode } = useLocalSearchParams<{ mode: string; roomCode?: string }>();
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -37,8 +37,10 @@ export default function SetupScreen() {
   const { settings } = useSettings();
   const [playerCount, setPlayerCount] = useState(2);
   const [playerName, setPlayerName] = useState('');
-  const [roomCode, setRoomCode] = useState('');
-  const [onlineMode, setOnlineMode] = useState<OnlineMode>('create');
+  // Arriving via a shared invite link (app/join.tsx) preselects the join tab
+  // with the room code filled in — the recipient only enters a name.
+  const [roomCode, setRoomCode] = useState(invitedRoomCode ?? '');
+  const [onlineMode, setOnlineMode] = useState<OnlineMode>(invitedRoomCode ? 'join' : 'create');
   const [isPublic, setIsPublic] = useState(true);
 
   const { data: profile } = useQuery<{ firstName: string; lastName: string }>({

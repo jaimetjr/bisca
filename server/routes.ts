@@ -10,6 +10,7 @@ import { eq, desc, sql } from 'drizzle-orm';
 import { hashPassword, verifyPassword, signAuthToken, verifyAuthToken } from './lib/auth';
 import { issueCode, verifyCode } from './lib/auth-codes';
 import { sendVerificationCode, sendPasswordResetCode } from './lib/email';
+import { joinPageHtml } from './lib/join-page';
 import { createKeyedRateLimiter } from './lib/rate-limit';
 import {
   recordGameAndEvaluate,
@@ -618,6 +619,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         log.error({ err }, 'failed to fetch leaderboard');
         res.status(500).json({ error: 'Failed to fetch leaderboard' });
       }
+    });
+
+    // Invite landing page for shared room links: clickable HTTPS URL that
+    // opens the app when installed and offers the Play Store otherwise.
+    app.get("/join/:code", (req: Request, res: Response) => {
+      const raw = String(req.params.code ?? '');
+      if (!/^[A-Za-z0-9]{4,6}$/.test(raw)) {
+        res.status(404).type('html').send('<!doctype html><meta charset="utf-8"><p>Sala não encontrada.</p>');
+        return;
+      }
+      res.type('html').send(joinPageHtml(raw.toUpperCase()));
     });
 
     const httpServer = createServer(app);
