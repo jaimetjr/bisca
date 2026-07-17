@@ -629,12 +629,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .filter(Boolean),
     );
 
-    function isOriginAllowed(origin: string | undefined): boolean {
+    function isOriginAllowed(origin: string | undefined, requestHost: string | undefined): boolean {
       if (!origin) {
-        // Native mobile clients (Expo) connect without an Origin header — allow.
+        // Clients with no Origin header (plain ws libraries, some native stacks) — allow.
         return true;
       }
       if (allowedOrigins.has(origin)) return true;
+      // Same-origin: React Native's WebSocket sends an Origin derived from the
+      // target URL (wss://<host> → https://<host>), so an Origin matching the
+      // host this request arrived on is the app talking to its own server.
+      // Without this, phones get 403 "Forbidden origin" on every WS connect.
+      if (requestHost) {
+        try {
+          if (new URL(origin).host === requestHost) return true;
+        } catch {
+          // Malformed Origin — fall through to the remaining rules.
+        }
+      }
       if (
         origin.startsWith('http://localhost:') ||
         origin.startsWith('http://127.0.0.1:') ||
@@ -648,8 +659,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const wss = new WebSocketServer({
       server: httpServer,
       path: '/',
-      verifyClient: ({ origin }, cb) => {
-        if (isOriginAllowed(origin)) {
+      verifyClient: ({ origin, req }, cb) => {
+        // Behind Railway's proxy the public host arrives in x-forwarded-host;
+        // locally it's the plain Host header.
+        const forwarded = req.headers['x-forwarded-host'];
+        const requestHost =
+          (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0].trim() ||
+          req.headers.host;
+        if (isOriginAllowed(origin, requestHost)) {
           cb(true);
         } else {
           cb(false, 403, 'Forbidden origin');

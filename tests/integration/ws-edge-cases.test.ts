@@ -21,6 +21,40 @@ afterAll(async () => {
   await closeServer(server);
 });
 
+describe('origin check', () => {
+  // React Native's WebSocket sends an Origin header derived from the target
+  // URL (e.g. https://<our-host>). A connection whose Origin is the server
+  // itself must always be accepted — regression test for the production bug
+  // where phones got 403 "Forbidden origin" on create_room.
+  it('accepts a same-origin Origin header', async () => {
+    const WebSocket = (await import('ws')).default;
+    // https + own host mirrors production (RN maps wss:// → https:// Origin);
+    // it also dodges the http://127.0.0.1: dev carve-out so this test is only
+    // satisfied by genuine same-host matching.
+    const sameOrigin = wsUrl.replace('ws://', 'https://');
+    const ws = new WebSocket(wsUrl, { origin: sameOrigin } as never);
+    await new Promise<void>((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+      ws.once('unexpected-response', (_req, res) =>
+        reject(new Error(`rejected with HTTP ${res.statusCode}`)),
+      );
+    });
+    ws.close();
+  });
+
+  it('rejects an unknown Origin with 403', async () => {
+    const WebSocket = (await import('ws')).default;
+    const ws = new WebSocket(wsUrl, { origin: 'https://evil.example.com' } as never);
+    const status = await new Promise<number>((resolve, reject) => {
+      ws.once('open', () => reject(new Error('connection was accepted')));
+      ws.once('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0));
+      ws.once('error', () => {}); // fires after unexpected-response; ignore
+    });
+    expect(status).toBe(403);
+  });
+});
+
 describe('invalid message', () => {
   it('returns INVALID_MESSAGE for malformed JSON', async () => {
     const ws = await openWS(wsUrl);
