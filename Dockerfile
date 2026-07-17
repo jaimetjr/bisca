@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
 # ─── Stage 1: build the bundled server ───────────────────────────────────────
-FROM node:20-alpine AS builder
+# Node 24 (npm 11) — must match the npm generation that writes package-lock.json.
+# npm 10 (node:20) builds a different ideal tree for the Sentry/OTel + artillery
+# subtrees and rejects the npm-11 lockfile with a false EUSAGE "out of sync".
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -13,7 +16,7 @@ COPY shared ./shared
 RUN npm run server:build
 
 # ─── Stage 2: runtime image (production deps only) ───────────────────────────
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
