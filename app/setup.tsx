@@ -56,9 +56,13 @@ export default function SetupScreen() {
     },
   });
 
-  const resolvedName = isLoggedIn
-    ? `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim() || t('setup.defaultName')
-    : playerName.trim() || t('setup.defaultName');
+  // The server rejects player names over PLAYER_NAME_MAX_LENGTH (join/create
+  // fail with INVALID_MESSAGE). The guest input enforces it via maxLength, but
+  // profile-derived full names have no such bound — clamp before sending.
+  const rawName = isLoggedIn
+    ? `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim()
+    : playerName.trim();
+  const resolvedName = rawName.slice(0, PLAYER_NAME_MAX_LENGTH).trim() || t('setup.defaultName');
 
   const handleStart = () => {
     if (isOnline) {

@@ -14,6 +14,7 @@ import { LanguageProvider } from '@shared/hooks/useLanguage';
 import { queryClient } from '@/shared/query-client';
 import { EntitlementProvider } from '@shared/hooks/useEntitlement';
 import { RewardsProvider } from '@shared/hooks/useRewards';
+import { consumePendingInvite } from '@/shared/lib/pending-invite';
 
 // Crash/error reporting. The DSN is a public identifier (safe to embed) and is
 // only set for EAS preview/production builds via eas.json — `enabled` keeps dev
@@ -76,9 +77,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Verified user or guest still on an auth screen → go home
+    // Verified user or guest still on an auth screen → resume a parked invite
+    // (deep link that got bounced to login — see app/join.tsx) or go home.
     if ((isSignedIn || isGuest) && inAuthGroup) {
-      router.replace('/');
+      void (async () => {
+        const invited = await consumePendingInvite();
+        if (invited) {
+          router.replace({ pathname: '/setup', params: { mode: 'online', roomCode: invited } });
+        } else {
+          router.replace('/');
+        }
+      })();
     }
   }, [isSignedIn, emailVerified, authLoaded, guestLoaded, isGuest, inAuthGroup, onVerifyScreen, router]);
 
