@@ -48,9 +48,10 @@ export default function VerifyEmailScreen() {
         setErrorMsg(result.error);
         return;
       }
-      // Token now reflects verified state; AuthGuard will allow the app, but
-      // navigate explicitly for immediacy.
-      router.replace('/');
+      // No navigation here: the token now reflects the verified state, and
+      // AuthGuard routes to home or resumes a parked invite (see app/join.tsx).
+      // An explicit replace('/') would leave the auth group before AuthGuard's
+      // effect runs and drop the invite.
     } finally {
       setLoading(false);
     }

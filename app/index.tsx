@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { View, Text, Pressable, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -24,10 +24,21 @@ const BANNER_AD_UNIT_ID = __DEV__
       android: process.env.EXPO_PUBLIC_ADMOB_BANNER_ANDROID,
     }) ?? TestIds.BANNER;
 
+// Usable dp height (window minus safe areas and container padding) the fixed-dp
+// column was designed for. The home screen must fit without scrolling, so on
+// shorter screens every size-driving value is multiplied by usable/REF (floored
+// at 0.75 so extreme window sizes don't shrink it into illegibility).
+const REF_USABLE_HEIGHT = 800;
+
 export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const topPadding = Platform.OS === 'web' ? 67 : insets.top;
     const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+    const { height: windowHeight } = useWindowDimensions();
+    const usableHeight = windowHeight - topPadding - bottomPadding - 40;
+    const scale = Math.max(0.75, Math.min(1, usableHeight / REF_USABLE_HEIGHT));
+    const s = useCallback((n: number) => Math.round(n * scale), [scale]);
+    const styles = useMemo(() => makeStyles(s), [s]);
     const { isGuest, isLoaded: guestLoaded, disableGuestMode } = useGuestMode();
     const { isPremium } = useEntitlement();
     const rewards = useRewards();
@@ -77,7 +88,7 @@ export default function HomeScreen() {
     const handleRewardedPress = () => { void showRewardedAd(); };
 
     return (
-        <View style={[styles.container, { paddingTop: topPadding + 20, paddingBottom: bottomPadding + 20 }]}>
+        <View style={[styles.container, { paddingTop: topPadding + s(20), paddingBottom: bottomPadding + s(20) }]}>
             <LinearGradient
                 colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
                 style={StyleSheet.absoluteFill}
@@ -85,7 +96,7 @@ export default function HomeScreen() {
 
             {isGuest && (
                 <Pressable style={styles.guestBanner} onPress={handleCreateAccount}>
-                    <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Colors.gold} />
+                    <MaterialCommunityIcons name="alert-circle-outline" size={s(16)} color={Colors.gold} />
                     <Text style={styles.guestBannerText}>Playing as Guest &mdash; stats won&apos;t be saved.</Text>
                     <Text style={styles.guestBannerCta}>Create Account</Text>
                 </Pressable>
@@ -93,22 +104,22 @@ export default function HomeScreen() {
 
             <View style={styles.topActions}>
                 <Pressable style={styles.iconBtn} onPress={() => router.push('/settings')} testID="settings-btn">
-                    <MaterialCommunityIcons name="cog" size={22} color={Colors.textSecondary} />
+                    <MaterialCommunityIcons name="cog" size={s(22)} color={Colors.textSecondary} />
                 </Pressable>
                 <Pressable style={styles.iconBtn} onPress={() => router.push('/stats')} testID="stats-btn">
-                    <MaterialCommunityIcons name="chart-bar" size={22} color={Colors.textSecondary} />
+                    <MaterialCommunityIcons name="chart-bar" size={s(22)} color={Colors.textSecondary} />
                 </Pressable>
                 <Pressable style={styles.iconBtn} onPress={() => router.push('/quests')} testID="quests-btn">
-                    <MaterialCommunityIcons name="calendar-check" size={22} color={Colors.textSecondary} />
+                    <MaterialCommunityIcons name="calendar-check" size={s(22)} color={Colors.textSecondary} />
                 </Pressable>
                 <Pressable style={styles.iconBtn} onPress={() => router.push('/achievements')} testID="achievements-btn">
-                    <MaterialCommunityIcons name="trophy-outline" size={22} color={Colors.textSecondary} />
+                    <MaterialCommunityIcons name="trophy-outline" size={s(22)} color={Colors.textSecondary} />
                 </Pressable>
             </View>
 
             <View style={styles.header}>
                 <View style={styles.logoContainer}>
-                    <MaterialCommunityIcons name="cards-playing" size={56} color={Colors.gold} />
+                    <MaterialCommunityIcons name="cards-playing" size={s(56)} color={Colors.gold} />
                 </View>
                 <Text style={styles.title}>{t('home.title')}</Text>
                 <Text style={styles.subtitle}>{t('home.subtitle')}</Text>
@@ -121,13 +132,13 @@ export default function HomeScreen() {
                     testID="play-ai-btn"
                 >
                     <View style={styles.menuButtonIcon}>
-                        <MaterialCommunityIcons name="robot" size={28} color={Colors.textDark} />
+                        <MaterialCommunityIcons name="robot" size={s(28)} color={Colors.textDark} />
                     </View>
                     <View style={styles.menuButtonContent}>
                         <Text style={styles.menuButtonTitle}>{t('home.playAI')}</Text>
                         <Text style={styles.menuButtonDesc}>{t('home.playAIDesc')}</Text>
                     </View>
-                    <MaterialCommunityIcons name="chevron-right" size={24} color={Colors.textDark} />
+                    <MaterialCommunityIcons name="chevron-right" size={s(24)} color={Colors.textDark} />
                 </Pressable>
 
                 <Pressable
@@ -136,13 +147,13 @@ export default function HomeScreen() {
                     testID="play-online-btn"
                 >
                     <View style={styles.menuButtonIcon}>
-                        <MaterialCommunityIcons name="earth" size={28} color={Colors.gold} />
+                        <MaterialCommunityIcons name="earth" size={s(28)} color={Colors.gold} />
                     </View>
                     <View style={styles.menuButtonContent}>
                         <Text style={styles.menuButtonTitleLight}>{t('home.playOnline')}</Text>
                         <Text style={styles.menuButtonDescLight}>{t('home.playOnlineDesc')}</Text>
                     </View>
-                    <MaterialCommunityIcons name="chevron-right" size={24} color={Colors.textSecondary} />
+                    <MaterialCommunityIcons name="chevron-right" size={s(24)} color={Colors.textSecondary} />
                 </Pressable>
             </View>
 
@@ -151,9 +162,9 @@ export default function HomeScreen() {
                 onPress={() => setTutorialVisible(true)}
                 testID="how-to-play-btn"
             >
-                <MaterialCommunityIcons name="book-open-variant" size={18} color={Colors.gold} />
+                <MaterialCommunityIcons name="book-open-variant" size={s(18)} color={Colors.gold} />
                 <Text style={styles.rulesText}>{t('home.rules')}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textSecondary} />
+                <MaterialCommunityIcons name="chevron-right" size={s(18)} color={Colors.textSecondary} />
             </Pressable>
 
             {showRewardedTile && (
@@ -167,7 +178,7 @@ export default function HomeScreen() {
                     disabled={rewardedDisabled}
                     testID="rewarded-skip-btn"
                 >
-                    <MaterialCommunityIcons name="gift-outline" size={20} color={Colors.gold} />
+                    <MaterialCommunityIcons name="gift-outline" size={s(20)} color={Colors.gold} />
                     <View style={{ flex: 1 }}>
                         <Text style={styles.rewardedTileTitle}>{t('rewards.skipPassTitle')}</Text>
                         <Text style={styles.rewardedTileSubtext}>{rewardedSubtext}</Text>
@@ -198,17 +209,17 @@ export default function HomeScreen() {
                 <View style={styles.footerDivider} />
                 <View style={styles.footerContent}>
                     <View style={styles.footerItem}>
-                        <MaterialCommunityIcons name="cards" size={16} color={Colors.textSecondary} />
+                        <MaterialCommunityIcons name="cards" size={s(16)} color={Colors.textSecondary} />
                         <Text style={styles.footerText}>{t('home.cards')}</Text>
                     </View>
                     <View style={styles.footerDot} />
                     <View style={styles.footerItem}>
-                        <MaterialCommunityIcons name="account-group" size={16} color={Colors.textSecondary} />
+                        <MaterialCommunityIcons name="account-group" size={s(16)} color={Colors.textSecondary} />
                         <Text style={styles.footerText}>{t('home.modes')}</Text>
                     </View>
                     <View style={styles.footerDot} />
                     <View style={styles.footerItem}>
-                        <MaterialCommunityIcons name="trophy" size={16} color={Colors.textSecondary} />
+                        <MaterialCommunityIcons name="trophy" size={s(16)} color={Colors.textSecondary} />
                         <Text style={styles.footerText}>{t('home.winTarget')}</Text>
                     </View>
                 </View>
@@ -220,64 +231,66 @@ export default function HomeScreen() {
 }
 
 
-const styles = StyleSheet.create({
+// The BannerAd is intentionally excluded from scaling — AdMob banners render at
+// a fixed 320x50, so only its margin shrinks.
+const makeStyles = (s: (n: number) => number) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: Colors.background,
-        paddingHorizontal: 24,
+        paddingHorizontal: s(24),
     },
     topActions: {
         flexDirection: 'row',
         justifyContent: 'flex-end',
-        gap: 8,
-        marginBottom: 8,
+        gap: s(8),
+        marginBottom: s(8),
     },
     iconBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: s(40),
+        height: s(40),
+        borderRadius: s(20),
         backgroundColor: Colors.whiteAlpha,
         justifyContent: 'center',
         alignItems: 'center',
     },
     header: {
         alignItems: 'center',
-        marginBottom: 40,
+        marginBottom: s(40),
     },
     logoContainer: {
-        width: 96,
-        height: 96,
-        borderRadius: 48,
+        width: s(96),
+        height: s(96),
+        borderRadius: s(48),
         backgroundColor: Colors.whiteAlpha,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: s(16),
         borderWidth: 2,
         borderColor: Colors.gold,
     },
     title: {
-        fontSize: 44,
+        fontSize: s(44),
         fontFamily: 'Inter_700Bold',
         color: Colors.gold,
         letterSpacing: 2,
     },
     subtitle: {
-        fontSize: 14,
+        fontSize: s(14),
         fontFamily: 'Inter_400Regular',
         color: Colors.textSecondary,
-        marginTop: 4,
+        marginTop: s(4),
     },
     menuContainer: {
-        gap: 14,
-        marginBottom: 28,
+        gap: s(14),
+        marginBottom: s(28),
     },
     menuButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 18,
-        paddingHorizontal: 16,
-        borderRadius: 16,
-        gap: 14,
+        paddingVertical: s(18),
+        paddingHorizontal: s(16),
+        borderRadius: s(16),
+        gap: s(14),
     },
     primaryButton: {
         backgroundColor: Colors.gold,
@@ -293,9 +306,9 @@ const styles = StyleSheet.create({
         borderColor: Colors.whiteAlpha,
     },
     menuButtonIcon: {
-        width: 48,
-        height: 48,
-        borderRadius: 14,
+        width: s(48),
+        height: s(48),
+        borderRadius: s(14),
         backgroundColor: 'rgba(0,0,0,0.08)',
         justifyContent: 'center',
         alignItems: 'center',
@@ -304,23 +317,23 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     menuButtonTitle: {
-        fontSize: 18,
+        fontSize: s(18),
         fontFamily: 'Inter_700Bold',
         color: Colors.textDark,
     },
     menuButtonTitleLight: {
-        fontSize: 18,
+        fontSize: s(18),
         fontFamily: 'Inter_700Bold',
         color: Colors.white,
     },
     menuButtonDesc: {
-        fontSize: 12,
+        fontSize: s(12),
         fontFamily: 'Inter_400Regular',
         color: 'rgba(0,0,0,0.5)',
         marginTop: 2,
     },
     menuButtonDescLight: {
-        fontSize: 12,
+        fontSize: s(12),
         fontFamily: 'Inter_400Regular',
         color: Colors.textSecondary,
         marginTop: 2,
@@ -328,18 +341,18 @@ const styles = StyleSheet.create({
     rulesCard: {
         flexDirection: 'row',
         backgroundColor: Colors.whiteAlpha2,
-        borderRadius: 12,
-        padding: 14,
-        gap: 10,
+        borderRadius: s(12),
+        padding: s(14),
+        gap: s(10),
         alignItems: 'flex-start',
-        marginBottom: 28,
+        marginBottom: s(28),
     },
     rulesText: {
         flex: 1,
         color: Colors.textSecondary,
-        fontSize: 13,
+        fontSize: s(13),
         fontFamily: 'Inter_400Regular',
-        lineHeight: 20,
+        lineHeight: s(20),
     },
     footer: {
         marginTop: 'auto',
@@ -347,13 +360,13 @@ const styles = StyleSheet.create({
     footerDivider: {
         height: 1,
         backgroundColor: Colors.whiteAlpha,
-        marginBottom: 16,
+        marginBottom: s(16),
     },
     footerContent: {
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
-        gap: 12,
+        gap: s(12),
     },
     footerItem: {
         flexDirection: 'row',
@@ -368,74 +381,74 @@ const styles = StyleSheet.create({
     },
     footerText: {
         color: Colors.textSecondary,
-        fontSize: 12,
+        fontSize: s(12),
         fontFamily: 'Inter_500Medium',
     },
     guestBanner: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: s(8),
         backgroundColor: Colors.whiteAlpha,
         borderWidth: 1,
         borderColor: Colors.gold,
-        borderRadius: 10,
-        paddingVertical: 10,
-        paddingHorizontal: 14,
-        marginBottom: 12,
+        borderRadius: s(10),
+        paddingVertical: s(10),
+        paddingHorizontal: s(14),
+        marginBottom: s(12),
     },
     guestBannerText: {
         flex: 1,
         color: Colors.textSecondary,
-        fontSize: 12,
+        fontSize: s(12),
         fontFamily: 'Inter_400Regular',
     },
     guestBannerCta: {
         color: Colors.gold,
-        fontSize: 12,
+        fontSize: s(12),
         fontFamily: 'Inter_600SemiBold',
     },
     bannerContainer: {
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: s(8),
     },
     rewardedTile: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: s(12),
         backgroundColor: Colors.whiteAlpha2,
         borderWidth: 1,
         borderColor: Colors.whiteAlpha,
-        borderRadius: 12,
-        paddingVertical: 12,
-        paddingHorizontal: 14,
-        marginBottom: 12,
+        borderRadius: s(12),
+        paddingVertical: s(12),
+        paddingHorizontal: s(14),
+        marginBottom: s(12),
     },
     rewardedTileDisabled: {
         opacity: 0.5,
     },
     rewardedTileTitle: {
         color: Colors.white,
-        fontSize: 13,
+        fontSize: s(13),
         fontFamily: 'Inter_600SemiBold',
     },
     rewardedTileSubtext: {
         color: Colors.textSecondary,
-        fontSize: 11,
+        fontSize: s(11),
         fontFamily: 'Inter_400Regular',
         marginTop: 2,
     },
     rewardedBadge: {
         backgroundColor: Colors.gold,
-        minWidth: 24,
-        height: 24,
-        borderRadius: 12,
+        minWidth: s(24),
+        height: s(24),
+        borderRadius: s(12),
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 8,
+        paddingHorizontal: s(8),
     },
     rewardedBadgeText: {
         color: Colors.textDark,
-        fontSize: 12,
+        fontSize: s(12),
         fontFamily: 'Inter_700Bold',
     },
 });

@@ -67,8 +67,10 @@ export default function LoginScreen() {
           setErrorMsg(result.error);
           return;
         }
-        // AuthGuard routes to verify-email if this account isn't verified yet.
-        router.replace('/');
+        // No navigation here: AuthGuard owns the post-auth route. It sends
+        // unverified accounts to verify-email and resumes a parked invite
+        // (see app/join.tsx) — an explicit replace('/') would leave the auth
+        // group before AuthGuard's effect runs and drop the invite.
       }
     } finally {
       setLoading(false);
