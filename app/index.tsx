@@ -97,8 +97,8 @@ export default function HomeScreen() {
             {isGuest && (
                 <Pressable style={styles.guestBanner} onPress={handleCreateAccount}>
                     <MaterialCommunityIcons name="alert-circle-outline" size={s(16)} color={Colors.gold} />
-                    <Text style={styles.guestBannerText}>Playing as Guest &mdash; stats won&apos;t be saved.</Text>
-                    <Text style={styles.guestBannerCta}>Create Account</Text>
+                    <Text style={styles.guestBannerText}>{t('home.guestBanner')}</Text>
+                    <Text style={styles.guestBannerCta}>{t('auth.createAccount')}</Text>
                 </Pressable>
             )}
 

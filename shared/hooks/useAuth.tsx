@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Buffer } from 'buffer';
 import { getApiUrl } from '@/shared/query-client';
 import { t } from '@/shared/i18n';
+import { friendlyApiError } from '@/shared/lib/api-errors';
 
 // Self-hosted auth, replacing Clerk. A single JWT (issued by the Express
 // server) is persisted on the device; its `sub` claim is the user id. The
@@ -111,18 +112,6 @@ const AuthContext = createContext<AuthContextType>({
   resetPassword: async () => ({ ok: false, error: 'Auth not ready' }),
 });
 
-// Map server error codes from the code endpoints to friendly messages.
-function friendlyError(code: unknown): string {
-  switch (code) {
-    case 'invalid': return 'That code is incorrect';
-    case 'expired': return 'That code has expired — request a new one';
-    case 'too_many_attempts': return 'Too many attempts — request a new code';
-    case 'weak_password': return t('auth.errPasswordWeak');
-    case 'password_pwned': return t('auth.errPasswordPwned');
-    default: return typeof code === 'string' && code ? code : 'Something went wrong';
-  }
-}
-
 async function authFetch(
   path: string,
   body: unknown,
@@ -138,10 +127,10 @@ async function authFetch(
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, error: friendlyError(data.error) };
+    if (!res.ok) return { ok: false, error: friendlyApiError(data) };
     return { ok: true, data };
   } catch {
-    return { ok: false, error: 'Network error — please try again' };
+    return { ok: false, error: t('auth.errNetwork') };
   }
 }
 

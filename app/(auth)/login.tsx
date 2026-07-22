@@ -96,7 +96,7 @@ export default function LoginScreen() {
       <View style={styles.logoContainer}>
         <MaterialCommunityIcons name="cards-playing" size={56} color={Colors.gold} />
       </View>
-      <Text style={styles.title}>Bisca</Text>
+      <Text style={styles.title}>{t('home.title')}</Text>
       <Text style={styles.subtitle}>{t('auth.subtitle')}</Text>
 
       {isRegistering && (

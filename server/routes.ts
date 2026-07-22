@@ -41,7 +41,15 @@ const loginIpLimiter = createKeyedRateLimiter({ capacity: 20, refillPerMs: 20 / 
 const loginEmailLimiter = createKeyedRateLimiter({ capacity: 8, refillPerMs: 8 / (15 * 60_000) });   // per account
 const registerIpLimiter = createKeyedRateLimiter({ capacity: 10, refillPerMs: 10 / (15 * 60_000) }); // per IP
 
-const TOO_MANY = { error: 'Too many attempts — please try again later' };
+// Change-password and delete-account both re-verify the current password;
+// without a cap a stolen JWT lets an attacker brute-force it with unlimited
+// bcrypt.compare calls. Shared key across both routes so alternating between
+// them doesn't double the attacker's budget.
+const passwordCheckLimiter = createKeyedRateLimiter({ capacity: 8, refillPerMs: 8 / (15 * 60_000) });
+
+// User-facing errors carry a stable machine `code` (localized client-side)
+// alongside the English `error` sentence kept for older clients.
+const TOO_MANY = { error: 'Too many attempts — please try again later', code: 'too_many_requests' };
 
 /** Best-effort client IP, honoring x-forwarded-for when behind a proxy. */
 function clientIp(req: Request): string {
@@ -107,11 +115,11 @@ async function rejectInvalidPassword(
   ctx: PasswordContext,
 ): Promise<boolean> {
   if (typeof password !== 'string' || !validatePassword(password, ctx).ok) {
-    res.status(400).json({ error: 'weak_password' });
+    res.status(400).json({ error: 'weak_password', code: 'weak_password' });
     return true;
   }
   if (await isPasswordPwned(password)) {
-    res.status(400).json({ error: 'password_pwned' });
+    res.status(400).json({ error: 'password_pwned', code: 'password_pwned' });
     return true;
   }
   return false;
@@ -130,16 +138,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const { email, password, firstName, lastName, dateOfBirth } = req.body ?? {};
         if (typeof email !== 'string' || !EMAIL_RE.test(email)) {
-          res.status(400).json({ error: 'A valid email is required' });
+          res.status(400).json({ error: 'A valid email is required', code: 'invalid_email' });
           return;
         }
         if (typeof firstName !== 'string' || !firstName.trim() ||
             typeof lastName !== 'string' || !lastName.trim()) {
-          res.status(400).json({ error: 'First and last name are required' });
+          res.status(400).json({ error: 'First and last name are required', code: 'name_required' });
           return;
         }
         if (typeof dateOfBirth !== 'string' || !isAtLeast18ISO(dateOfBirth)) {
-          res.status(400).json({ error: 'You must be at least 18 years old' });
+          res.status(400).json({ error: 'You must be at least 18 years old', code: 'under_18' });
           return;
         }
         if (await rejectInvalidPassword(res, password, passwordContext({ email, firstName, lastName }))) {
@@ -150,7 +158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const [existing] = await db.select({ id: users.id }).from(users)
           .where(eq(users.email, normalizedEmail)).limit(1);
         if (existing) {
-          res.status(409).json({ error: 'An account with this email already exists' });
+          res.status(409).json({ error: 'An account with this email already exists', code: 'email_exists' });
           return;
         }
 
@@ -179,7 +187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(201).json({ token, userId: created.id, emailVerified: false });
       } catch (err) {
         log.error({ err }, 'registration failed');
-        res.status(500).json({ error: 'Failed to create account' });
+        res.status(500).json({ error: 'Failed to create account', code: 'server_error' });
       }
     });
 
@@ -191,7 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         const { email, password } = req.body ?? {};
         if (typeof email !== 'string' || typeof password !== 'string') {
-          res.status(400).json({ error: 'Email and password are required' });
+          res.status(400).json({ error: 'Email and password are required', code: 'invalid_credentials' });
           return;
         }
         const normalizedEmail = email.trim().toLowerCase();
@@ -208,14 +216,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? await verifyPassword(password, user.passwordHash)
           : await verifyPassword(password, '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinv');
         if (!user || !ok) {
-          res.status(401).json({ error: 'Invalid email or password' });
+          res.status(401).json({ error: 'Invalid email or password', code: 'invalid_credentials' });
           return;
         }
         const token = await signAuthToken(user.id, user.emailVerified);
         res.json({ token, userId: user.id, emailVerified: user.emailVerified });
       } catch (err) {
         log.error({ err }, 'login failed');
-        res.status(500).json({ error: 'Failed to sign in' });
+        res.status(500).json({ error: 'Failed to sign in', code: 'server_error' });
       }
     });
 
@@ -224,13 +232,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const userId = req.userId!;
         const { code } = req.body ?? {};
         if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
-          res.status(400).json({ error: 'Enter the 6-digit code' });
+          res.status(400).json({ error: 'Enter the 6-digit code', code: 'code_required' });
           return;
         }
         const result = await verifyCode(userId, 'email_verify', code);
         if (!result.ok) {
           const status = result.reason === 'too_many_attempts' ? 429 : 400;
-          res.status(status).json({ error: result.reason });
+          res.status(status).json({ error: result.reason, code: result.reason });
           return;
         }
         await db.update(users)
@@ -241,7 +249,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ ok: true, token, emailVerified: true });
       } catch (err) {
         log.error({ err }, 'email verification failed');
-        res.status(500).json({ error: 'Failed to verify email' });
+        res.status(500).json({ error: 'Failed to verify email', code: 'server_error' });
       }
     });
 
@@ -253,13 +261,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
         if (!codeRequestLimiter.take(`verify:${userId}`)) {
-          res.status(429).json({ error: 'Too many requests — try again later' });
+          res.status(429).json({ error: 'Too many requests — try again later', code: 'too_many_requests' });
           return;
         }
         const [user] = await db.select({ email: users.email }).from(users)
           .where(eq(users.id, userId)).limit(1);
         if (!user) {
-          res.status(404).json({ error: 'User not found' });
+          res.status(404).json({ error: 'User not found', code: 'user_not_found' });
           return;
         }
         const code = await issueCode(userId, 'email_verify');
@@ -267,7 +275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ ok: true });
       } catch (err) {
         log.error({ err }, 'resend verification failed');
-        res.status(500).json({ error: 'Failed to resend code' });
+        res.status(500).json({ error: 'Failed to resend code', code: 'server_error' });
       }
     });
 
@@ -278,7 +286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const { email } = req.body ?? {};
         if (typeof email !== 'string' || !EMAIL_RE.test(email)) {
-          res.status(400).json({ error: 'A valid email is required' });
+          res.status(400).json({ error: 'A valid email is required', code: 'invalid_email' });
           return;
         }
         const normalizedEmail = email.trim().toLowerCase();
@@ -305,7 +313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { email, code, newPassword } = req.body ?? {};
         if (typeof email !== 'string' || !EMAIL_RE.test(email) ||
             typeof code !== 'string' || !/^\d{6}$/.test(code)) {
-          res.status(400).json({ error: 'Invalid email or code' });
+          res.status(400).json({ error: 'Invalid email or code', code: 'invalid' });
           return;
         }
         if (await rejectInvalidPassword(res, newPassword, passwordContext({ email }))) {
@@ -316,13 +324,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(eq(users.email, normalizedEmail)).limit(1);
         // Same generic error whether the email is unknown or the code is wrong.
         if (!user) {
-          res.status(400).json({ error: 'invalid' });
+          res.status(400).json({ error: 'invalid', code: 'invalid' });
           return;
         }
         const result = await verifyCode(user.id, 'password_reset', code);
         if (!result.ok) {
           const status = result.reason === 'too_many_attempts' ? 429 : 400;
-          res.status(status).json({ error: result.reason });
+          res.status(status).json({ error: result.reason, code: result.reason });
           return;
         }
         // A successful reset also verifies the email (they proved control of it)
@@ -333,21 +341,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ ok: true });
       } catch (err) {
         log.error({ err }, 'reset password failed');
-        res.status(500).json({ error: 'Failed to reset password' });
+        res.status(500).json({ error: 'Failed to reset password', code: 'server_error' });
       }
     });
 
     app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
+        if (!passwordCheckLimiter.take(`pwcheck:${userId}`)) {
+          res.status(429).json(TOO_MANY);
+          return;
+        }
         const { currentPassword, newPassword } = req.body ?? {};
         const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) {
-          res.status(404).json({ error: 'User not found' });
+          res.status(404).json({ error: 'User not found', code: 'user_not_found' });
           return;
         }
         if (typeof currentPassword !== 'string' || !(await verifyPassword(currentPassword, user.passwordHash))) {
-          res.status(401).json({ error: 'Current password is incorrect' });
+          res.status(401).json({ error: 'Current password is incorrect', code: 'incorrect_password' });
           return;
         }
         if (await rejectInvalidPassword(res, newPassword, passwordContext({
@@ -361,7 +373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ ok: true });
       } catch (err) {
         log.error({ err }, 'change password failed');
-        res.status(500).json({ error: 'Failed to change password' });
+        res.status(500).json({ error: 'Failed to change password', code: 'server_error' });
       }
     });
 
@@ -374,14 +386,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     app.delete("/api/users/me", requireAuth, async (req: Request, res: Response) => {
       try {
         const userId = req.userId!;
+        if (!passwordCheckLimiter.take(`pwcheck:${userId}`)) {
+          res.status(429).json(TOO_MANY);
+          return;
+        }
         const { password } = req.body ?? {};
         const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) {
-          res.status(404).json({ error: 'User not found' });
+          res.status(404).json({ error: 'User not found', code: 'user_not_found' });
           return;
         }
         if (typeof password !== 'string' || !(await verifyPassword(password, user.passwordHash))) {
-          res.status(401).json({ error: 'Current password is incorrect' });
+          res.status(401).json({ error: 'Current password is incorrect', code: 'incorrect_password' });
           return;
         }
         await db.transaction(async (tx) => {
@@ -394,7 +410,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ ok: true });
       } catch (err) {
         log.error({ err }, 'account deletion failed');
-        res.status(500).json({ error: 'Failed to delete account' });
+        res.status(500).json({ error: 'Failed to delete account', code: 'server_error' });
       }
     });
 
@@ -456,11 +472,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { firstName, lastName, dateOfBirth } = req.body ?? {};
         if (typeof firstName !== 'string' || !firstName.trim() ||
             typeof lastName !== 'string' || !lastName.trim()) {
-          res.status(400).json({ error: 'First and last name are required' });
+          res.status(400).json({ error: 'First and last name are required', code: 'name_required' });
           return;
         }
         if (typeof dateOfBirth !== 'string' || !isAtLeast18ISO(dateOfBirth)) {
-          res.status(400).json({ error: 'You must be at least 18 years old' });
+          res.status(400).json({ error: 'You must be at least 18 years old', code: 'under_18' });
           return;
         }
         await db.update(users)
@@ -474,7 +490,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ ok: true });
       } catch (err) {
         log.error({ err }, 'failed to save profile');
-        res.status(500).json({ error: 'Failed to save profile' });
+        res.status(500).json({ error: 'Failed to save profile', code: 'server_error' });
       }
     });
 

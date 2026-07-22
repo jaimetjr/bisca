@@ -7,6 +7,7 @@ import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import { useAuth } from '@shared/hooks/useAuth';
 import { getApiUrl } from '@shared/query-client';
+import { friendlyApiError } from '@/shared/lib/api-errors';
 
 interface DeleteAccountModalProps {
   visible: boolean;
@@ -44,7 +45,7 @@ export default function DeleteAccountModal({ visible, onClose }: DeleteAccountMo
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error ?? t('settings.deleteAccountError'));
+        setError(friendlyApiError(data));
         return;
       }
       // Account gone — clear the local session and return to login.

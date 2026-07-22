@@ -24,6 +24,7 @@ import { createGameState, playCard, completeTrick } from '@/shared/lib/brisca/en
 import { GameState, Card, AIDifficulty } from '@/shared/lib/types';
 import { chooseAICard } from '@/shared/lib/brisca/ai';
 import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
+import { wsErrorText } from '@/shared/lib/api-errors';
 import { useSettings } from '@/shared/hooks/useSettings';
 import { takeGameWs } from '@/shared/ws-store';
 import { useLanguage } from '@shared/hooks/useLanguage';
@@ -188,7 +189,7 @@ export default function GameScreen() {
               }, 1000);
               break;
             case 'error':
-              setErrorMsg(data.message);
+              setErrorMsg(wsErrorText(data.code, data.message));
               break;
           }
         } catch {

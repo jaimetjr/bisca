@@ -43,6 +43,7 @@ export type ErrorCode =
   | 'ROOM_FULL'
   | 'GAME_ALREADY_STARTED'
   | 'INVALID_CARD'
+  | 'MUST_FOLLOW_SUIT'
   | 'NOT_YOUR_TURN'
   | 'AUTH_REQUIRED'
   | 'INVALID_MESSAGE'

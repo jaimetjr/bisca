@@ -6,19 +6,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
-import { isAtLeast18, dobToISO } from '@shared/lib/date';
+import { isAtLeast18, dobToISO, getLocaleDatePlaceholder, formatLocaleDate, isoToLocaleDate } from '@shared/lib/date';
 import { getApiUrl } from '@shared/query-client';
 import { validatePassword } from '@shared/lib/validation/password';
 import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
-
-function isoToDob(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
-}
+import { t } from '@/shared/i18n';
+import { useLanguage } from '@shared/hooks/useLanguage';
+import { friendlyApiError } from '@/shared/lib/api-errors';
 
 export default function ProfileScreen() {
   const { getToken } = useAuth();
   const insets = useSafeAreaInsets();
+  useLanguage(); // subscribe to language changes so t() output updates
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
 
@@ -49,10 +48,10 @@ export default function ProfileScreen() {
           setEmail(data.email ?? '');
           setFirstName(data.firstName ?? '');
           setLastName(data.lastName ?? '');
-          setDateOfBirth(data.dateOfBirth ? isoToDob(data.dateOfBirth) : '');
+          setDateOfBirth(data.dateOfBirth ? isoToLocaleDate(data.dateOfBirth) : '');
         }
       } catch {
-        setErrorMsg('Failed to load profile');
+        setErrorMsg(t('profile.loadError'));
       } finally {
         setLoading(false);
       }
@@ -61,15 +60,15 @@ export default function ProfileScreen() {
 
   const handleSave = async () => {
     if (!firstName.trim() || !lastName.trim()) {
-      setErrorMsg('Please enter your first and last name');
+      setErrorMsg(t('auth.errNameRequired'));
       return;
     }
     if (!dateOfBirth.trim()) {
-      setErrorMsg('Please enter your date of birth (DD/MM/YYYY)');
+      setErrorMsg(t('auth.errDobRequired'));
       return;
     }
     if (!isAtLeast18(dateOfBirth)) {
-      setErrorMsg('You must be at least 18 years old');
+      setErrorMsg(t('auth.errUnder18'));
       return;
     }
 
@@ -88,13 +87,13 @@ export default function ProfileScreen() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setErrorMsg(data.error ?? 'Failed to save');
+        setErrorMsg(friendlyApiError(data));
         return;
       }
       setDirty(false);
-      Alert.alert('Saved', 'Your profile has been updated.');
+      Alert.alert(t('profile.savedTitle'), t('profile.savedBody'));
     } catch {
-      setErrorMsg('Network error — please try again');
+      setErrorMsg(t('auth.errNetwork'));
     } finally {
       setSaving(false);
     }
@@ -102,11 +101,11 @@ export default function ProfileScreen() {
 
   const handleChangePassword = async () => {
     setChangePasswordError('');
-    if (!currentPassword) { setChangePasswordError('Enter your current password'); return; }
-    if (!changeNewPassword) { setChangePasswordError('Enter a new password'); return; }
-    if (changeNewPassword !== changeConfirmPassword) { setChangePasswordError('Passwords do not match'); return; }
+    if (!currentPassword) { setChangePasswordError(t('profile.errCurrentPasswordRequired')); return; }
+    if (!changeNewPassword) { setChangePasswordError(t('profile.errNewPasswordRequired')); return; }
+    if (changeNewPassword !== changeConfirmPassword) { setChangePasswordError(t('profile.errPasswordsMismatch')); return; }
     if (!validatePassword(changeNewPassword, { email, firstName, lastName }).ok) {
-      setChangePasswordError('Password does not meet the requirements');
+      setChangePasswordError(t('auth.errPasswordWeak'));
       return;
     }
     setChangePasswordSaving(true);
@@ -119,15 +118,15 @@ export default function ProfileScreen() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setChangePasswordError(data.error ?? 'Failed to change password');
+        setChangePasswordError(friendlyApiError(data));
         return;
       }
       setCurrentPassword('');
       setChangeNewPassword('');
       setChangeConfirmPassword('');
-      Alert.alert('Done', 'Password changed successfully.');
+      Alert.alert(t('profile.passwordChangedTitle'), t('profile.passwordChangedBody'));
     } catch {
-      setChangePasswordError('Network error — please try again');
+      setChangePasswordError(t('auth.errNetwork'));
     } finally {
       setChangePasswordSaving(false);
     }
@@ -144,7 +143,7 @@ export default function ProfileScreen() {
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.white} />
         </Pressable>
-        <Text style={styles.title}>Profile</Text>
+        <Text style={styles.title}>{t('profile.title')}</Text>
       </View>
 
       {loading ? (
@@ -154,44 +153,44 @@ export default function ProfileScreen() {
       ) : (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <Text style={styles.sectionHeader}>Personal Information</Text>
+          <Text style={styles.sectionHeader}>{t('profile.personalInfo')}</Text>
 
           <View style={styles.card}>
             {email ? (
               <>
-                <Text style={styles.fieldLabel}>Email</Text>
+                <Text style={styles.fieldLabel}>{t('auth.email')}</Text>
                 <View style={[styles.input, styles.readonlyField]}>
                   <Text style={styles.readonlyText}>{email}</Text>
                 </View>
               </>
             ) : null}
 
-            <Text style={styles.fieldLabel}>First Name</Text>
+            <Text style={styles.fieldLabel}>{t('auth.firstName')}</Text>
             <TextInput
               style={styles.input}
               value={firstName}
               onChangeText={(v) => { setFirstName(v); setDirty(true); }}
-              placeholder="First Name"
+              placeholder={t('auth.firstName')}
               placeholderTextColor={Colors.textSecondary}
               autoCapitalize="words"
             />
 
-            <Text style={styles.fieldLabel}>Last Name</Text>
+            <Text style={styles.fieldLabel}>{t('auth.lastName')}</Text>
             <TextInput
               style={styles.input}
               value={lastName}
               onChangeText={(v) => { setLastName(v); setDirty(true); }}
-              placeholder="Last Name"
+              placeholder={t('auth.lastName')}
               placeholderTextColor={Colors.textSecondary}
               autoCapitalize="words"
             />
 
-            <Text style={styles.fieldLabel}>Date of Birth</Text>
+            <Text style={styles.fieldLabel}>{t('auth.dateOfBirth')}</Text>
             <TextInput
               style={styles.input}
               value={dateOfBirth}
-              onChangeText={(v) => { setDateOfBirth(v); setDirty(true); }}
-              placeholder="DD/MM/YYYY"
+              onChangeText={(v) => { setDateOfBirth(formatLocaleDate(v)); setDirty(true); }}
+              placeholder={getLocaleDatePlaceholder()}
               placeholderTextColor={Colors.textSecondary}
               keyboardType="numbers-and-punctuation"
               maxLength={10}
@@ -209,20 +208,20 @@ export default function ProfileScreen() {
               {saving ? (
                 <ActivityIndicator color={Colors.textDark} />
               ) : (
-                <Text style={styles.saveBtnText}>Save Changes</Text>
+                <Text style={styles.saveBtnText}>{t('profile.saveChanges')}</Text>
               )}
             </Pressable>
           )}
 
-          <Text style={styles.sectionHeader}>Security</Text>
+          <Text style={styles.sectionHeader}>{t('profile.security')}</Text>
 
           <View style={styles.card}>
-            <Text style={styles.fieldLabel}>Change Password</Text>
+            <Text style={styles.fieldLabel}>{t('profile.changePassword')}</Text>
             <TextInput
               style={styles.input}
               value={currentPassword}
               onChangeText={setCurrentPassword}
-              placeholder="Current password"
+              placeholder={t('profile.currentPassword')}
               placeholderTextColor={Colors.textSecondary}
               secureTextEntry
             />
@@ -230,7 +229,7 @@ export default function ProfileScreen() {
               style={styles.input}
               value={changeNewPassword}
               onChangeText={setChangeNewPassword}
-              placeholder="New password"
+              placeholder={t('auth.newPassword')}
               placeholderTextColor={Colors.textSecondary}
               secureTextEntry
             />
@@ -242,7 +241,7 @@ export default function ProfileScreen() {
               style={styles.input}
               value={changeConfirmPassword}
               onChangeText={setChangeConfirmPassword}
-              placeholder="Confirm new password"
+              placeholder={t('profile.confirmNewPassword')}
               placeholderTextColor={Colors.textSecondary}
               secureTextEntry
             />
@@ -254,7 +253,7 @@ export default function ProfileScreen() {
             >
               {changePasswordSaving
                 ? <ActivityIndicator color={Colors.textDark} />
-                : <Text style={styles.saveBtnText}>Change Password</Text>}
+                : <Text style={styles.saveBtnText}>{t('profile.changePassword')}</Text>}
             </Pressable>
           </View>
 

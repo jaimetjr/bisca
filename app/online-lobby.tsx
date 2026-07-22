@@ -10,6 +10,7 @@ import { t } from '@/shared/i18n';
 import { getApiUrl } from '@/shared/query-client';
 import { CONNECTION_TIMEOUT_MS } from '@/shared/constants/game';
 import type { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
+import { wsErrorText } from '@/shared/lib/api-errors';
 import { storeGameWs } from '@/shared/ws-store';
 import { useLanguage } from '@shared/hooks/useLanguage';
 
@@ -129,7 +130,7 @@ export default function OnlineLobbyScreen() {
                   [{ text: t('lobby.ok'), onPress: () => router.replace('/setup') }],
                 );
               } else {
-                setErrorMsg(data.message);
+                setErrorMsg(wsErrorText(data.code, data.message));
                 setStatus('error');
               }
               break;

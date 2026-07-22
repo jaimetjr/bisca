@@ -508,7 +508,7 @@ async function handleMessage(ws: WebSocket, data: ValidatedClientMessage) {
       }
 
       if (!isLegalPlay(room.gameState, playerId, card, room.strictFollowSuit === true)) {
-        sendTo(ws, { type: 'error', message: 'You must follow suit', code: 'INVALID_CARD' });
+        sendTo(ws, { type: 'error', message: 'You must follow suit', code: 'MUST_FOLLOW_SUIT' });
         return;
       }
 
