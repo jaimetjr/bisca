@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { View, Platform } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
-import mobileAds from 'react-native-google-mobile-ads';
+import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
 import * as Sentry from '@sentry/react-native';
 import Colors from '@/shared/constants/colors';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -43,7 +43,20 @@ if (Platform.OS !== 'web') {
   ];
   (async () => {
     try {
-      await mobileAds().setRequestConfiguration({ testDeviceIdentifiers });
+      // 13+ general-audience config (see shared/constants/policy.ts):
+      // - maxAdContentRating T caps ad creatives at Teen so a 13-year-old never
+      //   sees a Mature (MA) ad. The app's store rating is Everyone, so this
+      //   also keeps served ads consistent with that rating.
+      // - tagForChildDirectedTreatment false declares we are NOT a child-directed
+      //   (<13, COPPA) app. Never set this true here — it would opt the app into
+      //   the children's regime we deliberately gate out.
+      // Personalization is already handled per-request: both ad hooks pass
+      // requestNonPersonalizedAdsOnly: true, so no TFUA tag is needed.
+      await mobileAds().setRequestConfiguration({
+        testDeviceIdentifiers,
+        maxAdContentRating: MaxAdContentRating.T,
+        tagForChildDirectedTreatment: false,
+      });
     } catch {}
     try {
       await mobileAds().initialize();

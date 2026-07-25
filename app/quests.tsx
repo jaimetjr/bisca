@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@shared/hooks/useAuth';
 import Colors from '@/shared/constants/colors';
-import { t } from '@/shared/i18n';
+import { t, tOr } from '@/shared/i18n';
 import { getApiUrl } from '@/shared/query-client';
 import { useLanguage } from '@shared/hooks/useLanguage';
 
@@ -133,8 +133,8 @@ export default function QuestsScreen() {
                       color={Colors.gold}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.questTitle}>{q.title}</Text>
-                      <Text style={styles.questDesc}>{q.description}</Text>
+                      <Text style={styles.questTitle}>{tOr(`quest.${q.id}.title`, q.title)}</Text>
+                      <Text style={styles.questDesc}>{tOr(`quest.${q.id}.desc`, q.description)}</Text>
                     </View>
                     <Text style={styles.questXp}>{t('quests.xpReward', { xp: q.xp })}</Text>
                   </View>

@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
-import { isAtLeast18, dobToISO, getLocaleDatePlaceholder, formatLocaleDate, isoToLocaleDate } from '@shared/lib/date';
+import { isOldEnoughToRegister, dobToISO, getLocaleDatePlaceholder, formatLocaleDate, isoToLocaleDate } from '@shared/lib/date';
+import { MIN_SIGNUP_AGE } from '@shared/constants/policy';
 import { getApiUrl } from '@shared/query-client';
 import { validatePassword } from '@shared/lib/validation/password';
 import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
@@ -67,8 +68,8 @@ export default function ProfileScreen() {
       setErrorMsg(t('auth.errDobRequired'));
       return;
     }
-    if (!isAtLeast18(dateOfBirth)) {
-      setErrorMsg(t('auth.errUnder18'));
+    if (!isOldEnoughToRegister(dateOfBirth)) {
+      setErrorMsg(t('auth.errMinAge', { age: MIN_SIGNUP_AGE }));
       return;
     }
 

@@ -30,6 +30,17 @@ export function t(key: string, params?: Record<string, string | number>): string
   return text;
 }
 
+/**
+ * Translate `key`, falling back to `fallback` when the key is unknown (t()
+ * echoes the key back in that case). Used for server-supplied catalog text
+ * (achievements, quests) where the API sends English copy that we localize by
+ * stable id — an id we don't have a translation for yet still renders readably.
+ */
+export function tOr(key: string, fallback: string): string {
+  const out = t(key);
+  return out === key ? fallback : out;
+}
+
 export function getSuitName(suit: string): string {
   return t(`suit.${suit}`);
 }

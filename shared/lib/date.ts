@@ -1,4 +1,5 @@
 import { getLocales } from 'expo-localization';
+import { MIN_SIGNUP_AGE } from '../constants/policy';
 
 export type DateFormat = 'DMY' | 'MDY' | 'YMD';
 
@@ -54,8 +55,11 @@ function parseLocaleDate(input: string): { day: number; month: number; year: num
   return { day, month, year };
 }
 
-/** True if the locale-formatted date represents someone at least 18 years old today. */
-export function isAtLeast18(dobString: string): boolean {
+/**
+ * True if the locale-formatted date is old enough to register today
+ * (>= MIN_SIGNUP_AGE). Client-side gate; the server re-checks independently.
+ */
+export function isOldEnoughToRegister(dobString: string): boolean {
   const parsed = parseLocaleDate(dobString);
   if (!parsed) return false;
   const { day, month, year } = parsed;
@@ -65,7 +69,7 @@ export function isAtLeast18(dobString: string): boolean {
   let age = today.getFullYear() - dob.getFullYear();
   const m = today.getMonth() - dob.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-  return age >= 18;
+  return age >= MIN_SIGNUP_AGE;
 }
 
 /** Convert a locale-formatted date to YYYY-MM-DD for the server. */

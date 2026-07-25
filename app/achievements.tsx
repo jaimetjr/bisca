@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@shared/hooks/useAuth';
 import Colors from '@/shared/constants/colors';
-import { t } from '@/shared/i18n';
+import { t, tOr } from '@/shared/i18n';
 import { getApiUrl } from '@/shared/query-client';
 import { useLanguage } from '@shared/hooks/useLanguage';
 
@@ -105,9 +105,11 @@ export default function AchievementsScreen() {
                   </View>
                   <View style={styles.body}>
                     <Text style={[styles.rowTitle, !a.unlocked && styles.rowTitleLocked]}>
-                      {a.title}
+                      {tOr(`achievement.${a.id}.title`, a.title)}
                     </Text>
-                    <Text style={styles.rowDesc}>{a.description}</Text>
+                    <Text style={styles.rowDesc}>
+                      {tOr(`achievement.${a.id}.desc`, a.description)}
+                    </Text>
                   </View>
                   <View style={styles.xpBadge}>
                     <Text style={styles.xpText}>{`+${a.xp}`}</Text>

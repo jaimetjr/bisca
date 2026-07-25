@@ -6,7 +6,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/shared/constants/colors';
 import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
-import { isAtLeast18, dobToISO, formatLocaleDate, getLocaleDatePlaceholder } from '@shared/lib/date';
+import { isOldEnoughToRegister, dobToISO, formatLocaleDate, getLocaleDatePlaceholder } from '@shared/lib/date';
+import { MIN_SIGNUP_AGE } from '@shared/constants/policy';
 import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import { validatePassword } from '@shared/lib/validation/password';
@@ -40,8 +41,8 @@ export default function LoginScreen() {
           setErrorMsg(t('auth.errDobRequired'));
           return;
         }
-        if (!isAtLeast18(dateOfBirth)) {
-          setErrorMsg(t('auth.errUnder18'));
+        if (!isOldEnoughToRegister(dateOfBirth)) {
+          setErrorMsg(t('auth.errMinAge', { age: MIN_SIGNUP_AGE }));
           return;
         }
         if (!validatePassword(password, { email: email.trim(), firstName: firstName.trim(), lastName: lastName.trim() }).ok) {
