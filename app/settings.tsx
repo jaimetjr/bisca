@@ -61,14 +61,14 @@ export default function SettingsScreen() {
 
   const handleSignOut = () => {
     Alert.alert(
-      isGuest ? 'Leave Guest Mode' : 'Sign Out',
+      isGuest ? t('settings.leaveGuestMode') : t('settings.signOut'),
       isGuest
-        ? 'You will be taken back to the login screen.'
-        : 'Are you sure you want to sign out?',
+        ? t('settings.leaveGuestModeMessage')
+        : t('settings.signOutMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('settings.cancel'), style: 'cancel' },
         {
-          text: isGuest ? 'Leave' : 'Sign Out',
+          text: isGuest ? t('settings.leaveGuestModeConfirm') : t('settings.signOut'),
           style: 'destructive',
           onPress: async () => {
             setSigningOut(true);

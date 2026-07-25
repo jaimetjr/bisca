@@ -6,9 +6,11 @@
 // runtime (this is what caused the landing-page ENOENT). Bundling the content
 // into the JS guarantees these pages always serve in production.
 
+import { MIN_SIGNUP_AGE } from '../../shared/constants/policy';
+
 const APP_NAME = 'Brisca';
 const CONTACT_EMAIL = 'jaime.tasca.jr@gmail.com';
-const LAST_UPDATED = 'July 8, 2026';
+const LAST_UPDATED = 'July 25, 2026';
 
 // AdMob publisher id (from the ca-app-pub-9412542080032324/* ad unit IDs).
 // f08c47fec0942fa0 is Google's fixed certification-authority id.
@@ -63,7 +65,7 @@ export const PRIVACY_HTML = page('Privacy Policy', `
   <h2>Information we collect</h2>
   <ul>
     <li><strong>Account data</strong> (only if you register): email address, first and last
-      name, and date of birth (used to confirm you are 18+).</li>
+      name, and date of birth (used to confirm you are at least ${MIN_SIGNUP_AGE}).</li>
     <li><strong>Gameplay data</strong> (for registered users): match history, statistics,
       quest progress, and achievements.</li>
     <li><strong>Advertising identifier</strong>: when ads are shown, Google AdMob may access
@@ -98,8 +100,10 @@ export const PRIVACY_HTML = page('Privacy Policy', `
   <a href="/account-deletion">account deletion page</a> for details.</p>
 
   <h2>Children</h2>
-  <p>${APP_NAME} is not directed to children under 18. We do not knowingly collect data from
-  anyone under 18.</p>
+  <p>${APP_NAME} is not directed to children under ${MIN_SIGNUP_AGE}. We do not knowingly collect
+  data from anyone under ${MIN_SIGNUP_AGE}. If you believe a child under ${MIN_SIGNUP_AGE} has
+  provided us data, contact us at <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a> and we
+  will delete it.</p>
 
   <h2>Changes</h2>
   <p>We may update this policy; material changes will be reflected by the "Last updated" date above.</p>
@@ -110,8 +114,8 @@ export const TERMS_HTML = page('Terms of Service', `
   please do not use the app.</p>
 
   <h2>Accounts</h2>
-  <p>You must be at least 18 years old to create an account. You are responsible for keeping
-  your password secure and for activity under your account.</p>
+  <p>You must be at least ${MIN_SIGNUP_AGE} years old to create an account. You are responsible for
+  keeping your password secure and for activity under your account.</p>
 
   <h2>Acceptable use</h2>
   <ul>

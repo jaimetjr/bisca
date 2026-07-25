@@ -6,7 +6,9 @@ import { t } from '@/shared/i18n';
 const HTTP_CODE_KEYS: Record<string, string> = {
   invalid_email: 'auth.errInvalidEmail',
   name_required: 'auth.errNameRequired',
-  under_18: 'auth.errUnder18',
+  // Wire code stays `under_18` for back-compat with clients already installed;
+  // it now means "under the minimum signup age" (see MIN_SIGNUP_AGE).
+  under_18: 'auth.errMinAge',
   email_exists: 'auth.errEmailExists',
   invalid_credentials: 'auth.errInvalidCredentials',
   code_required: 'auth.errCodeRequired',
@@ -52,6 +54,7 @@ const WS_CODE_KEYS: Record<string, string> = {
   NOT_YOUR_TURN: 'ws.notYourTurn',
   INVALID_CARD: 'ws.invalidCard',
   MUST_FOLLOW_SUIT: 'ws.mustFollowSuit',
+  HOST_LEFT: 'ws.hostLeft',
 };
 
 /** Translate a WS error by its code, falling back to the server's message. */

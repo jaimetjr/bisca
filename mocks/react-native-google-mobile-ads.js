@@ -53,6 +53,10 @@ const mobileAds = () => ({
   setRequestConfiguration: noopAsync,
 });
 
+// Mirrors the real enum's string values so code reading MaxAdContentRating.T
+// (see app/_layout.tsx) works under test.
+const MaxAdContentRating = { G: 'G', PG: 'PG', T: 'T', MA: 'MA' };
+
 module.exports = {
   __esModule: true,
   default: mobileAds,
@@ -64,4 +68,5 @@ module.exports = {
   InterstitialAd,
   RewardedAd,
   RewardedAdEventType,
+  MaxAdContentRating,
 };

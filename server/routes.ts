@@ -24,6 +24,7 @@ import {
 } from './lib/quest-service';
 import { logger } from './lib/logger';
 import { validatePassword, type PasswordContext } from '../shared/lib/validation/password';
+import { MIN_SIGNUP_AGE } from '../shared/constants/policy';
 import { isPasswordPwned } from './lib/password-policy';
 
 const log = logger.child({ module: 'routes' });
@@ -58,8 +59,11 @@ function clientIp(req: Request): string {
   return req.socket.remoteAddress ?? 'unknown';
 }
 
-/** Age check from an ISO (YYYY-MM-DD) date — server-side, locale-independent. */
-function isAtLeast18ISO(iso: string): boolean {
+/**
+ * Age gate from an ISO (YYYY-MM-DD) date — server-side, locale-independent.
+ * Enforces MIN_SIGNUP_AGE; the client checks the same threshold up front.
+ */
+function isOldEnoughISO(iso: string): boolean {
   if (!ISO_DATE_RE.test(iso)) return false;
   const [y, m, d] = iso.split('-').map(Number);
   const dob = new Date(Date.UTC(y, m - 1, d));
@@ -68,7 +72,7 @@ function isAtLeast18ISO(iso: string): boolean {
   let age = now.getUTCFullYear() - y;
   const mDiff = now.getUTCMonth() - (m - 1);
   if (mDiff < 0 || (mDiff === 0 && now.getUTCDate() < d)) age--;
-  return age >= 18;
+  return age >= MIN_SIGNUP_AGE;
 }
 
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -146,8 +150,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.status(400).json({ error: 'First and last name are required', code: 'name_required' });
           return;
         }
-        if (typeof dateOfBirth !== 'string' || !isAtLeast18ISO(dateOfBirth)) {
-          res.status(400).json({ error: 'You must be at least 18 years old', code: 'under_18' });
+        if (typeof dateOfBirth !== 'string' || !isOldEnoughISO(dateOfBirth)) {
+          res.status(400).json({ error: `You must be at least ${MIN_SIGNUP_AGE} years old`, code: 'under_18' });
           return;
         }
         if (await rejectInvalidPassword(res, password, passwordContext({ email, firstName, lastName }))) {
@@ -475,8 +479,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.status(400).json({ error: 'First and last name are required', code: 'name_required' });
           return;
         }
-        if (typeof dateOfBirth !== 'string' || !isAtLeast18ISO(dateOfBirth)) {
-          res.status(400).json({ error: 'You must be at least 18 years old', code: 'under_18' });
+        if (typeof dateOfBirth !== 'string' || !isOldEnoughISO(dateOfBirth)) {
+          res.status(400).json({ error: `You must be at least ${MIN_SIGNUP_AGE} years old`, code: 'under_18' });
           return;
         }
         await db.update(users)
