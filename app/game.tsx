@@ -18,11 +18,14 @@ import GameCard from '@/components/Card';
 import GameTable from '@/components/GameTable';
 import OpponentHand from '@/components/OpponentHand';
 import ScoreBoard from '@/components/ScoreBoard';
+import TutorialModal from '@/components/Tutorial';
 import { getApiUrl } from '@/shared/query-client';
 import { t } from '@/shared/i18n';
 import { createGameState, playCard, completeTrick } from '@/shared/lib/brisca/engine';
 import { GameState, Card, AIDifficulty } from '@/shared/lib/types';
 import { chooseAICard } from '@/shared/lib/brisca/ai';
+import { suggestPlay } from '@/shared/lib/brisca/coach';
+import { explainTrick } from '@/shared/lib/brisca/trick-explain';
 import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { wsErrorText } from '@/shared/lib/api-errors';
 import { useSettings } from '@/shared/hooks/useSettings';
@@ -74,6 +77,7 @@ export default function GameScreen() {
     initialState?: string;
     myPlayerId?: string;
     roomCode?: string;
+    practice?: string;
   }>();
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
@@ -81,6 +85,7 @@ export default function GameScreen() {
   const { height: screenHeight } = useWindowDimensions();
   const tableMaxHeight = Math.max(180, screenHeight * 0.47);
   const isOnline = params.mode === 'online';
+  const isPractice = params.practice === '1';
   const numPlayers = parseInt(params.playerCount || '2', 10);
   const playerName = params.playerName || t('setup.defaultName');
   const difficulty = (params.difficulty || 'medium') as AIDifficulty;
@@ -92,6 +97,11 @@ export default function GameScreen() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const isMyTurn = gameState?.players[gameState.currentPlayerIndex]?.id === myId && gameState?.phase === 'playing';
   const [errorMsg, setErrorMsg] = useState('');
+  // Practice-mode coach: the currently hinted card + why, and access to the
+  // How-to-Play modal from inside the game.
+  const [hintedCardId, setHintedCardId] = useState<string | null>(null);
+  const [hintReason, setHintReason] = useState<{ key: string; params?: Record<string, number> } | null>(null);
+  const [tutorialVisible, setTutorialVisible] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showAfkWarning, setShowAfkWarning] = useState(false);
   const [afkSecondsLeft, setAfkSecondsLeft] = useState(30);
@@ -278,7 +288,7 @@ export default function GameScreen() {
   }, [gameState?.phase, isOnline, trickDisplayMs]);
 
   useEffect(() => {
-    if (gameState?.phase !== 'gameOver' || isGuest || historySavedRef.current) return;
+    if (gameState?.phase !== 'gameOver' || isGuest || isPractice || historySavedRef.current) return;
     historySavedRef.current = true;
 
     const humanPlayer = gameState.players.find(p => p.id === myId);
@@ -328,10 +338,31 @@ export default function GameScreen() {
     }
   }, [isMyTurn]);
 
+  // Clear any active hint whenever it stops being the human's turn (e.g. right
+  // after playing) so a stale suggestion never lingers on the next turn.
+  useEffect(() => {
+    if (!isMyTurn) {
+      setHintedCardId(null);
+      setHintReason(null);
+    }
+  }, [isMyTurn]);
+
+  const handleHint = useCallback(() => {
+    if (!gameState) return;
+    const suggestion = suggestPlay(gameState, myIdRef.current);
+    if (suggestion) {
+      setHintedCardId(suggestion.card.id);
+      setHintReason({ key: suggestion.reasonKey, params: suggestion.params });
+    }
+  }, [gameState]);
+
   const handlePlayCard = useCallback((card: Card) => {
     if (!gameState || gameState.phase !== 'playing') return;
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     if (currentPlayer.id !== myIdRef.current) return;
+
+    setHintedCardId(null);
+    setHintReason(null);
 
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -365,6 +396,9 @@ export default function GameScreen() {
 
   const opponents = gameState.players.filter(p => p.id !== myId);
   const teamMode = humanPlayer.team !== undefined;
+  const trickInfo = isPractice && gameState.phase === 'trickComplete'
+    ? explainTrick(gameState.currentTrick, gameState.trumpSuit, gameState.players)
+    : null;
   const getOpponentPosition = (index: number): 'top' | 'left' | 'right' => {
     if (opponents.length === 1) return 'top';
     if (opponents.length === 2) return index === 0 ? 'left' : 'right';
@@ -420,7 +454,34 @@ export default function GameScreen() {
             <Text style={styles.turnText}>{t('game.yourTurn')}</Text>
           </Animated.View>
         )}
+        <View style={{ flex: 1 }} />
+        {isPractice && isMyTurn && (
+          <Pressable style={styles.hintBtn} onPress={handleHint} testID="hint-btn">
+            <MaterialCommunityIcons name="lightbulb-on" size={16} color={Colors.success} />
+            <Text style={styles.hintBtnText}>{t('game.hint')}</Text>
+          </Pressable>
+        )}
+        {!isOnline && (
+          <Pressable style={styles.helpBtn} onPress={() => setTutorialVisible(true)} testID="game-help-btn">
+            <MaterialCommunityIcons name="help-circle-outline" size={22} color={Colors.textSecondary} />
+          </Pressable>
+        )}
       </View>
+
+      {isPractice && (hintReason || trickInfo) && (
+        <View style={styles.coachBanner} testID="coach-banner">
+          <MaterialCommunityIcons
+            name={hintReason ? 'lightbulb-on' : 'cards-playing-outline'}
+            size={16}
+            color={Colors.success}
+          />
+          <Text style={styles.coachBannerText}>
+            {hintReason
+              ? t(hintReason.key, hintReason.params)
+              : t(trickInfo!.reasonKey, { winner: trickInfo!.winnerName, points: trickInfo!.points })}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.opponentsRow}>
         {opponents.map((opp, i) => (
@@ -466,6 +527,7 @@ export default function GameScreen() {
                   onPress={() => handlePlayCard(card)}
                   disabled={!isMyTurn}
                   highlighted={isMyTurn}
+                  hinted={card.id === hintedCardId}
                 />
               </DealAnimatedCard>
             );
@@ -497,6 +559,8 @@ export default function GameScreen() {
           }}
         />
       )}
+
+      <TutorialModal visible={tutorialVisible} onClose={() => setTutorialVisible(false)} />
 
       <Modal visible={showAfkWarning} transparent animationType="fade">
         <View style={styles.afkOverlay}>
@@ -576,6 +640,48 @@ const styles = StyleSheet.create({
     color: Colors.gold,
     fontSize: 12,
     fontFamily: 'Inter_600SemiBold',
+  },
+  hintBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(46, 125, 50, 0.2)',
+    borderWidth: 1,
+    borderColor: Colors.success,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  hintBtnText: {
+    color: Colors.success,
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  helpBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.whiteAlpha,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  coachBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(46, 125, 50, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(46, 125, 50, 0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  coachBannerText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    flex: 1,
   },
   opponentsRow: {
     flexDirection: 'row',

@@ -158,6 +158,21 @@ export default function HomeScreen() {
             </View>
 
             <Pressable
+                style={({ pressed }) => [styles.practiceButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                onPress={() => router.push({ pathname: '/game', params: { mode: 'ai', practice: '1', difficulty: 'easy', playerCount: '2', playerName: t('setup.defaultName') } })}
+                testID="practice-btn"
+            >
+                <View style={styles.practiceIcon}>
+                    <MaterialCommunityIcons name="school" size={s(24)} color={Colors.success} />
+                </View>
+                <View style={styles.menuButtonContent}>
+                    <Text style={styles.practiceTitle}>{t('home.practice')}</Text>
+                    <Text style={styles.menuButtonDescLight}>{t('home.practiceDesc')}</Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={s(20)} color={Colors.textSecondary} />
+            </Pressable>
+
+            <Pressable
                 style={({ pressed }) => [styles.rulesCard, pressed && { opacity: 0.85 }]}
                 onPress={() => setTutorialVisible(true)}
                 testID="how-to-play-btn"
@@ -337,6 +352,31 @@ const makeStyles = (s: (n: number) => number) => StyleSheet.create({
         fontFamily: 'Inter_400Regular',
         color: Colors.textSecondary,
         marginTop: 2,
+    },
+    practiceButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: s(14),
+        paddingHorizontal: s(16),
+        borderRadius: s(14),
+        gap: s(14),
+        backgroundColor: 'rgba(46, 125, 50, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(46, 125, 50, 0.5)',
+        marginBottom: s(14),
+    },
+    practiceIcon: {
+        width: s(44),
+        height: s(44),
+        borderRadius: s(12),
+        backgroundColor: 'rgba(0,0,0,0.12)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    practiceTitle: {
+        fontSize: s(16),
+        fontFamily: 'Inter_700Bold',
+        color: Colors.white,
     },
     rulesCard: {
         flexDirection: 'row',
