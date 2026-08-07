@@ -4,12 +4,14 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { useAuth } from '@shared/hooks/useAuth';
 import { getApiUrl } from '@shared/query-client';
 import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
 
 export default function VerifyEmailScreen() {
+  const contentPadding = useContentPadding(28);
   const { getToken, verifyEmail, resendVerification, signOut } = useAuth();
   const router = useRouter();
   useLanguage();
@@ -85,7 +87,7 @@ export default function VerifyEmailScreen() {
         style={StyleSheet.absoluteFill}
       />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingHorizontal: contentPadding }]} keyboardShouldPersistTaps="handled">
       <View style={styles.logoContainer}>
         <MaterialCommunityIcons name="email-check-outline" size={56} color={Colors.gold} />
       </View>

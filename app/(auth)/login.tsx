@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { isOldEnoughToRegister, dobToISO, formatLocaleDate, getLocaleDatePlaceholder } from '@shared/lib/date';
@@ -14,6 +15,7 @@ import { validatePassword } from '@shared/lib/validation/password';
 import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
 
 export default function LoginScreen() {
+  const contentPadding = useContentPadding(28);
   const { signIn, signUp } = useAuth();
   const { enableGuestMode } = useGuestMode();
   const router = useRouter();
@@ -91,7 +93,7 @@ export default function LoginScreen() {
       />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingHorizontal: contentPadding }]}
         keyboardShouldPersistTaps="handled"
       >
       <View style={styles.logoContainer}>

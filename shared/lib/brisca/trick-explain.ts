@@ -31,10 +31,15 @@ export function explainTrick(
   const wonByTrump = winningPlay.card.suit === trumpSuit && leadSuit !== trumpSuit;
   const points = trick.reduce((sum, tc) => sum + getCardPoints(tc.card), 0);
 
+  // "+0 pts" is noise: most tricks are worth nothing, and tacking a zero onto
+  // every one of them trains the player to stop reading the banner. Only name a
+  // number when points actually changed hands.
+  const base = wonByTrump ? 'trickExplain.trumpWins' : 'trickExplain.highestWins';
+
   return {
     winnerId,
     winnerName: players.find(p => p.id === winnerId)?.name ?? '',
-    reasonKey: wonByTrump ? 'trickExplain.trumpWins' : 'trickExplain.highestWins',
+    reasonKey: points > 0 ? base : `${base}NoPoints`,
     points,
   };
 }

@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@shared/hooks/useAuth';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { t } from '@/shared/i18n';
 import { getApiUrl } from '@/shared/query-client';
 import { useLanguage } from '@shared/hooks/useLanguage';
@@ -23,6 +24,7 @@ export default function StatsScreen() {
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+  const contentPadding = useContentPadding(24);
   const { getToken } = useAuth();
   useLanguage();
 
@@ -40,7 +42,7 @@ export default function StatsScreen() {
   });
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20 }]}>
+    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20, paddingHorizontal: contentPadding }]}>
       <LinearGradient
         colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
         style={StyleSheet.absoluteFill}

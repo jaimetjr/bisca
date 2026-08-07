@@ -1,77 +1,120 @@
 import React from 'react';
-import { Image } from 'react-native';
+import { Image } from 'expo-image';
 import { Suit, Rank } from '@/shared/lib/types';
+import { useCardMetrics } from '@shared/hooks/useCardMetrics';
+import { useCardBack } from '@shared/hooks/useCardBack';
+import { CardBackId } from '@shared/lib/brisca/card-backs';
 
 // Static require map — Metro bundler requires all requires to be statically analyzable
 const CARD_IMAGES: Record<string, ReturnType<typeof require>> = {
-  '1-oros':     require('@/assets/images/spanish/01-oros.png'),
-  '2-oros':     require('@/assets/images/spanish/02-oros.png'),
-  '3-oros':     require('@/assets/images/spanish/03-oros.png'),
-  '4-oros':     require('@/assets/images/spanish/04-oros.png'),
-  '5-oros':     require('@/assets/images/spanish/05-oros.png'),
-  '6-oros':     require('@/assets/images/spanish/06-oros.png'),
-  '7-oros':     require('@/assets/images/spanish/07-oros.png'),
-  '10-oros':    require('@/assets/images/spanish/10-oros.png'),
-  '11-oros':    require('@/assets/images/spanish/11-oros.png'),
-  '12-oros':    require('@/assets/images/spanish/12-oros.png'),
-  '1-copas':    require('@/assets/images/spanish/01-copas.png'),
-  '2-copas':    require('@/assets/images/spanish/02-copas.png'),
-  '3-copas':    require('@/assets/images/spanish/03-copas.png'),
-  '4-copas':    require('@/assets/images/spanish/04-copas.png'),
-  '5-copas':    require('@/assets/images/spanish/05-copas.png'),
-  '6-copas':    require('@/assets/images/spanish/06-copas.png'),
-  '7-copas':    require('@/assets/images/spanish/07-copas.png'),
-  '10-copas':   require('@/assets/images/spanish/10-copas.png'),
-  '11-copas':   require('@/assets/images/spanish/11-copas.png'),
-  '12-copas':   require('@/assets/images/spanish/12-copas.png'),
-  '1-espadas':  require('@/assets/images/spanish/01-espadas.png'),
-  '2-espadas':  require('@/assets/images/spanish/02-espadas.png'),
-  '3-espadas':  require('@/assets/images/spanish/03-espadas.png'),
-  '4-espadas':  require('@/assets/images/spanish/04-espadas.png'),
-  '5-espadas':  require('@/assets/images/spanish/05-espadas.png'),
-  '6-espadas':  require('@/assets/images/spanish/06-espadas.png'),
-  '7-espadas':  require('@/assets/images/spanish/07-espadas.png'),
-  '10-espadas': require('@/assets/images/spanish/10-espadas.png'),
-  '11-espadas': require('@/assets/images/spanish/11-espadas.png'),
-  '12-espadas': require('@/assets/images/spanish/12-espadas.png'),
-  '1-bastos':   require('@/assets/images/spanish/01-bastos.png'),
-  '2-bastos':   require('@/assets/images/spanish/02-bastos.png'),
-  '3-bastos':   require('@/assets/images/spanish/03-bastos.png'),
-  '4-bastos':   require('@/assets/images/spanish/04-bastos.png'),
-  '5-bastos':   require('@/assets/images/spanish/05-bastos.png'),
-  '6-bastos':   require('@/assets/images/spanish/06-bastos.png'),
-  '7-bastos':   require('@/assets/images/spanish/07-bastos.png'),
-  '10-bastos':  require('@/assets/images/spanish/10-bastos.png'),
-  '11-bastos':  require('@/assets/images/spanish/11-bastos.png'),
-  '12-bastos':  require('@/assets/images/spanish/12-bastos.png'),
-  'back':       require('@/assets/images/spanish/reverso.png'),
+  '1-oros':     require('@/assets/images/spanish/01-oros.webp'),
+  '2-oros':     require('@/assets/images/spanish/02-oros.webp'),
+  '3-oros':     require('@/assets/images/spanish/03-oros.webp'),
+  '4-oros':     require('@/assets/images/spanish/04-oros.webp'),
+  '5-oros':     require('@/assets/images/spanish/05-oros.webp'),
+  '6-oros':     require('@/assets/images/spanish/06-oros.webp'),
+  '7-oros':     require('@/assets/images/spanish/07-oros.webp'),
+  '10-oros':    require('@/assets/images/spanish/10-oros.webp'),
+  '11-oros':    require('@/assets/images/spanish/11-oros.webp'),
+  '12-oros':    require('@/assets/images/spanish/12-oros.webp'),
+  '1-copas':    require('@/assets/images/spanish/01-copas.webp'),
+  '2-copas':    require('@/assets/images/spanish/02-copas.webp'),
+  '3-copas':    require('@/assets/images/spanish/03-copas.webp'),
+  '4-copas':    require('@/assets/images/spanish/04-copas.webp'),
+  '5-copas':    require('@/assets/images/spanish/05-copas.webp'),
+  '6-copas':    require('@/assets/images/spanish/06-copas.webp'),
+  '7-copas':    require('@/assets/images/spanish/07-copas.webp'),
+  '10-copas':   require('@/assets/images/spanish/10-copas.webp'),
+  '11-copas':   require('@/assets/images/spanish/11-copas.webp'),
+  '12-copas':   require('@/assets/images/spanish/12-copas.webp'),
+  '1-espadas':  require('@/assets/images/spanish/01-espadas.webp'),
+  '2-espadas':  require('@/assets/images/spanish/02-espadas.webp'),
+  '3-espadas':  require('@/assets/images/spanish/03-espadas.webp'),
+  '4-espadas':  require('@/assets/images/spanish/04-espadas.webp'),
+  '5-espadas':  require('@/assets/images/spanish/05-espadas.webp'),
+  '6-espadas':  require('@/assets/images/spanish/06-espadas.webp'),
+  '7-espadas':  require('@/assets/images/spanish/07-espadas.webp'),
+  '10-espadas': require('@/assets/images/spanish/10-espadas.webp'),
+  '11-espadas': require('@/assets/images/spanish/11-espadas.webp'),
+  '12-espadas': require('@/assets/images/spanish/12-espadas.webp'),
+  '1-bastos':   require('@/assets/images/spanish/01-bastos.webp'),
+  '2-bastos':   require('@/assets/images/spanish/02-bastos.webp'),
+  '3-bastos':   require('@/assets/images/spanish/03-bastos.webp'),
+  '4-bastos':   require('@/assets/images/spanish/04-bastos.webp'),
+  '5-bastos':   require('@/assets/images/spanish/05-bastos.webp'),
+  '6-bastos':   require('@/assets/images/spanish/06-bastos.webp'),
+  '7-bastos':   require('@/assets/images/spanish/07-bastos.webp'),
+  '10-bastos':  require('@/assets/images/spanish/10-bastos.webp'),
+  '11-bastos':  require('@/assets/images/spanish/11-bastos.webp'),
+  '12-bastos':  require('@/assets/images/spanish/12-bastos.webp'),
 };
 
-// Sizes scaled from actual image dimensions (209×319 px)
-const SIZE_CONFIG = {
-  small:  { width: 56,  height: 86  },
-  medium: { width: 75,  height: 114 },
-  large:  { width: 90,  height: 137 },
+/**
+ * One per colourway the player can pick in Settings. Kept here rather than in
+ * `shared/` because `require()` of a PNG is Metro-specific and `shared/` is also
+ * imported by the server. Generated by `assets/brand/card-backs.js`; the ids are
+ * defined in `shared/lib/brisca/card-backs.ts` and a test keeps them in sync.
+ */
+export const CARD_BACK_IMAGES: Record<CardBackId, ReturnType<typeof require>> = {
+  verde:    require('@/assets/images/spanish/reverso-verde.webp'),
+  vermelho: require('@/assets/images/spanish/reverso-vermelho.webp'),
+  azul:     require('@/assets/images/spanish/reverso-azul.webp'),
+  vinho:    require('@/assets/images/spanish/reverso-vinho.webp'),
+  grafite:  require('@/assets/images/spanish/reverso-grafite.webp'),
+  roxo:     require('@/assets/images/spanish/reverso-roxo.webp'),
 };
+
+/**
+ * Every image the table can show, for warming the cache before a match.
+ *
+ * A card is only decoded the first time it appears, and the whole deck does not
+ * fit in the decoded-bitmap cache at once — so mid-match a card that was evicted
+ * pays for its decode again, right when it is dealt. That is the "sometimes they
+ * take very long" half of the report. `app/_layout.tsx` hands this to
+ * `Asset.loadAsync` on boot so the art is resident before the player ever leaves
+ * the home screen.
+ */
+export const ALL_CARD_ASSETS = [
+  ...Object.values(CARD_IMAGES),
+  ...Object.values(CARD_BACK_IMAGES),
+];
+
+export type CardSize = 'small' | 'medium' | 'large' | 'deck';
 
 interface CardSpriteProps {
   suit?: Suit;
   rank?: Rank;
   faceDown?: boolean;
-  size?: 'small' | 'medium' | 'large';
+  size?: CardSize;
 }
 
-export default function CardSprite({ suit, rank, faceDown, size = 'medium' }: CardSpriteProps) {
-  const dim = SIZE_CONFIG[size];
+function CardSprite({ suit, rank, faceDown, size = 'medium' }: CardSpriteProps) {
+  const dim = useCardMetrics()[size];
+  const { cardBack } = useCardBack();
+  const back = CARD_BACK_IMAGES[cardBack];
   const source = (!faceDown && suit && rank)
-    ? (CARD_IMAGES[`${rank}-${suit}`] ?? CARD_IMAGES['back'])
-    : CARD_IMAGES['back'];
+    ? (CARD_IMAGES[`${rank}-${suit}`] ?? back)
+    : back;
 
   return (
     <Image
       source={source}
-      style={{ width: dim.width, height: dim.height, borderRadius: 4 }}
-      resizeMode="stretch"
+      // The art already carries its own rounded white face on a transparent
+      // background, so the box must match CARD_ASPECT and use `contain` —
+      // `stretch` distorted every card by the aspect mismatch.
+      style={{ width: dim.width, height: dim.height }}
+      contentFit="contain"
+      // expo-image rather than react-native's Image for the two-tier cache: RN's
+      // keeps re-decoding the 620x1016 art every time a card scrolls back into
+      // the tree, which at ~2.5MB of bitmap a card is what made them appear late.
+      cachePolicy="memory-disk"
+      // No fade. The deal already has its own 350ms animation, and a cross-fade
+      // on top of it reads as exactly the lag this change is meant to remove.
+      transition={0}
     />
   );
 }
+
+// Eight or more of these render per screen and none of their props change when
+// the turn does, so without this every card re-renders on each state update.
+export default React.memo(CardSprite);

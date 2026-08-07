@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { isOldEnoughToRegister, dobToISO, getLocaleDatePlaceholder, formatLocaleDate, isoToLocaleDate } from '@shared/lib/date';
 import { MIN_SIGNUP_AGE } from '@shared/constants/policy';
 import { getApiUrl } from '@shared/query-client';
@@ -21,6 +22,7 @@ export default function ProfileScreen() {
   useLanguage(); // subscribe to language changes so t() output updates
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+  const contentPadding = useContentPadding(24);
 
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -134,7 +136,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20 }]}>
+    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20, paddingHorizontal: contentPadding }]}>
       <LinearGradient
         colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
         style={StyleSheet.absoluteFill}

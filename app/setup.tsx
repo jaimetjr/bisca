@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, TextInput, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, Platform, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { t } from '@/shared/i18n';
 import { PLAYER_NAME_MAX_LENGTH } from '@/shared/constants/game';
 import { useSettings } from '@/shared/hooks/useSettings';
 import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useLanguage } from '@shared/hooks/useLanguage';
-import { useQuery } from '@tanstack/react-query';
-import { getApiUrl } from '@/shared/query-client';
+import { useProfileName } from '@shared/hooks/useProfileName';
+import { resolvePlayerName } from '@shared/lib/player-name';
 
 type OnlineMode = 'create' | 'browse' | 'join';
 
@@ -27,9 +28,10 @@ export default function SetupScreen() {
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+  const contentPadding = useContentPadding(24);
   const isOnline = mode === 'online';
 
-  const { getToken, isSignedIn } = useAuth();
+  const { isSignedIn } = useAuth();
   const { isGuest } = useGuestMode();
   useLanguage();
   const isLoggedIn = !!isSignedIn && !isGuest;
@@ -43,28 +45,25 @@ export default function SetupScreen() {
   const [onlineMode, setOnlineMode] = useState<OnlineMode>(invitedRoomCode ? 'join' : 'create');
   const [isPublic, setIsPublic] = useState(true);
 
-  const { data: profile } = useQuery<{ firstName: string; lastName: string }>({
-    queryKey: ['profile'],
-    enabled: isLoggedIn,
-    queryFn: async () => {
-      const token = await getToken();
-      const res = await fetch(`${getApiUrl()}api/users/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to load profile');
-      return res.json();
-    },
+  // Cached across launches, so the name is right on the first frame instead of
+  // after a network round-trip. `isPending` is the first run only, and clears if
+  // the request fails so a dead API can't block play.
+  const { name: profileName, isPending: nameIsPending } = useProfileName(isLoggedIn);
+
+  const resolvedName = resolvePlayerName({
+    isLoggedIn,
+    profileName,
+    typedName: playerName,
+    fallback: t('setup.defaultName'),
   });
 
-  // The server rejects player names over PLAYER_NAME_MAX_LENGTH (join/create
-  // fail with INVALID_MESSAGE). The guest input enforces it via maxLength, but
-  // profile-derived full names have no such bound — clamp before sending.
-  const rawName = isLoggedIn
-    ? `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim()
-    : playerName.trim();
-  const resolvedName = rawName.slice(0, PLAYER_NAME_MAX_LENGTH).trim() || t('setup.defaultName');
+  // Blocked while a signed-in player's name is still unknown: `resolvedName` is
+  // baked into the route params and labels them for the whole match, so starting
+  // early would run the game as "Player".
+  const startDisabled = nameIsPending || (isOnline && onlineMode === 'join' && roomCode.length < 4);
 
   const handleStart = () => {
+    if (startDisabled) return;
     if (isOnline) {
       if (onlineMode === 'create') {
         router.push({
@@ -94,208 +93,231 @@ export default function SetupScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20 }]}>
+    <View style={styles.root}>
       <LinearGradient
         colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
         style={StyleSheet.absoluteFill}
       />
 
-      <Pressable style={styles.backButton} onPress={() => router.back()} testID="back-btn">
-        <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.white} />
-      </Pressable>
+      {/* Creating an online room is the tallest this screen gets — name field,
+          tab row, mode, visibility, hint — and the Start button lives at the
+          bottom. Without a scroll view a small phone simply clipped it: the
+          primary action of the screen was unreachable. `flexGrow: 1` keeps the
+          spacer below working, so on a tall screen the button still sits at the
+          bottom exactly as before. */}
+      <ScrollView
+        contentContainerStyle={[styles.content, {
+          paddingTop: topPadding + 16,
+          paddingBottom: bottomPadding + 20,
+          paddingHorizontal: contentPadding,
+        }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
 
-      <Text style={styles.title}>{isOnline ? t('setup.onlineTitle') : t('setup.aiTitle')}</Text>
-      <Text style={styles.subtitle}>
-        {isOnline ? t('setup.onlineSubtitle') : t('setup.aiSubtitle')}
-      </Text>
+        <Pressable style={styles.backButton} onPress={() => router.back()} testID="back-btn">
+          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.white} />
+        </Pressable>
 
-      {isLoggedIn ? (
-        <View style={styles.section}>
-          <Text style={styles.label}>{t('setup.yourName')}</Text>
-          <View style={styles.nameDisplay}>
-            <MaterialCommunityIcons name="account-circle" size={20} color={Colors.gold} />
-            <Text style={styles.nameDisplayText}>
-              {resolvedName}
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <View style={styles.section}>
-          <Text style={styles.label}>{t('setup.yourName')}</Text>
-          <TextInput
-            style={styles.input}
-            value={playerName}
-            onChangeText={setPlayerName}
-            placeholder={t('setup.enterName')}
-            placeholderTextColor={Colors.textSecondary}
-            maxLength={PLAYER_NAME_MAX_LENGTH}
-            testID="name-input"
-          />
-        </View>
-      )}
+        <Text style={styles.title}>{isOnline ? t('setup.onlineTitle') : t('setup.aiTitle')}</Text>
+        <Text style={styles.subtitle}>
+          {isOnline ? t('setup.onlineSubtitle') : t('setup.aiSubtitle')}
+        </Text>
 
-      {isOnline && (
-        <>
-          {/* Tab row */}
-          <View style={styles.tabContainer}>
-            {(['create', 'browse', 'join'] as OnlineMode[]).map((m) => {
-              const isActive = onlineMode === m;
-              const icons = TAB_ICONS[m];
-              return (
-                <Pressable
-                  key={m}
-                  style={[styles.tabButton, isActive && styles.tabActive]}
-                  onPress={() => handleTabPress(m)}
-                >
-                  <MaterialCommunityIcons
-                    name={(isActive ? icons.active : icons.default) as any}
-                    size={15}
-                    color={isActive ? Colors.textDark : Colors.textSecondary}
-                  />
-                  <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                    {m === 'create' ? t('setup.createRoom') : m === 'browse' ? t('setup.browseRooms') : t('setup.joinRoom')}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Content panel */}
-          <View style={styles.onlinePanelCard}>
-            {onlineMode === 'create' && (
-              <>
-                <View>
-                  <Text style={styles.label}>{t('setup.gameMode')}</Text>
-                  <View style={styles.playerCountRow}>
-                    {([{ count: 2, label: '1v1' }, { count: 4, label: '2v2' }] as const).map(({ count, label }) => (
-                      <Pressable
-                        key={count}
-                        style={[styles.countButton, playerCount === count && styles.countButtonActive]}
-                        onPress={() => setPlayerCount(count)}
-                        testID={`count-${count}-btn`}
-                      >
-                        <Text style={[styles.countText, playerCount === count && styles.countTextActive]}>
-                          {label}
-                        </Text>
-                        <Text style={[styles.countLabel, playerCount === count && styles.countLabelActive]}>
-                          {t('setup.players', { count })}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-
-                <View>
-                  <Text style={styles.label}>{t('setup.visibility')}</Text>
-                  <View style={styles.toggleContainer}>
-                    <Pressable
-                      style={[styles.toggleButton, isPublic && styles.toggleActive]}
-                      onPress={() => setIsPublic(true)}
-                    >
-                      <MaterialCommunityIcons name="earth" size={14} color={isPublic ? Colors.textDark : Colors.textSecondary} />
-                      <Text style={[styles.toggleText, isPublic && styles.toggleTextActive]}>{t('setup.public')}</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.toggleButton, !isPublic && styles.toggleActive]}
-                      onPress={() => setIsPublic(false)}
-                    >
-                      <MaterialCommunityIcons name="lock" size={14} color={!isPublic ? Colors.textDark : Colors.textSecondary} />
-                      <Text style={[styles.toggleText, !isPublic && styles.toggleTextActive]}>{t('setup.private')}</Text>
-                    </Pressable>
-                  </View>
-                  <Text style={styles.hintText}>{t(isPublic ? 'setup.publicHint' : 'setup.privateHint')}</Text>
-                </View>
-              </>
-            )}
-
-            {onlineMode === 'join' && (
-              <View>
-                <Text style={styles.label}>{t('setup.roomCode')}</Text>
-                <TextInput
-                  style={styles.roomCodeInput}
-                  value={roomCode}
-                  onChangeText={(txt) => setRoomCode(txt.toUpperCase())}
-                  placeholder={t('setup.enterRoomCode')}
-                  placeholderTextColor={Colors.textSecondary}
-                  maxLength={6}
-                  autoCapitalize="characters"
-                  testID="room-code-input"
-                />
-                <View style={styles.roomCodeMeta}>
-                  <Text style={styles.roomCodeCount}>{roomCode.length}/5</Text>
-                </View>
-              </View>
-            )}
-          </View>
-        </>
-      )}
-
-      {!isOnline && (
-        <>
+        {isLoggedIn ? (
           <View style={styles.section}>
-            <Text style={styles.label}>{t('setup.gameMode')}</Text>
-            <View style={styles.playerCountRow}>
-              {([{ count: 2, label: '1v1' }, { count: 4, label: '2v2' }] as const).map(({ count, label }) => (
-                <Pressable
-                  key={count}
-                  style={[styles.countButton, playerCount === count && styles.countButtonActive]}
-                  onPress={() => setPlayerCount(count)}
-                  testID={`count-${count}-btn`}
-                >
-                  <Text style={[styles.countText, playerCount === count && styles.countTextActive]}>
-                    {label}
-                  </Text>
-                  <Text style={[styles.countLabel, playerCount === count && styles.countLabelActive]}>
-                    {count === 2 ? t('setup.youVsAI') : t('setup.youAIvsAI')}
-                  </Text>
-                </Pressable>
-              ))}
+            <Text style={styles.label}>{t('setup.yourName')}</Text>
+            <View style={styles.nameDisplay}>
+              <MaterialCommunityIcons name="account-circle" size={20} color={Colors.gold} />
+              {/* Showing the placeholder while the real name is still in flight
+                  read as "your name is Player". Say it's loading instead. */}
+              {nameIsPending ? (
+                <ActivityIndicator size="small" color={Colors.gold} />
+              ) : (
+                <Text style={styles.nameDisplayText}>{resolvedName}</Text>
+              )}
             </View>
           </View>
-
-          <View style={styles.infoCard}>
-            <MaterialCommunityIcons name="robot" size={20} color={Colors.gold} />
-            <Text style={styles.infoText}>{t('setup.aiInfo')}</Text>
+        ) : (
+          <View style={styles.section}>
+            <Text style={styles.label}>{t('setup.yourName')}</Text>
+            <TextInput
+              style={styles.input}
+              value={playerName}
+              onChangeText={setPlayerName}
+              placeholder={t('setup.enterName')}
+              placeholderTextColor={Colors.textSecondary}
+              maxLength={PLAYER_NAME_MAX_LENGTH}
+              testID="name-input"
+            />
           </View>
-        </>
-      )}
+        )}
 
-      <View style={{ flex: 1 }} />
+        {isOnline && (
+          <>
+            {/* Tab row */}
+            <View style={styles.tabContainer}>
+              {(['create', 'browse', 'join'] as OnlineMode[]).map((m) => {
+                const isActive = onlineMode === m;
+                const icons = TAB_ICONS[m];
+                return (
+                  <Pressable
+                    key={m}
+                    style={[styles.tabButton, isActive && styles.tabActive]}
+                    onPress={() => handleTabPress(m)}
+                  >
+                    <MaterialCommunityIcons
+                      name={(isActive ? icons.active : icons.default) as any}
+                      size={15}
+                      color={isActive ? Colors.textDark : Colors.textSecondary}
+                    />
+                    <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                      {m === 'create' ? t('setup.createRoom') : m === 'browse' ? t('setup.browseRooms') : t('setup.joinRoom')}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.startButton,
-          pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-          (isOnline && onlineMode === 'join' && roomCode.length < 4) && styles.startButtonDisabled,
-        ]}
-        onPress={handleStart}
-        disabled={isOnline && onlineMode === 'join' && roomCode.length < 4}
-        testID="start-btn"
-      >
-        <MaterialCommunityIcons
-          name={
-            !isOnline ? 'sword-cross'
-            : onlineMode === 'create' ? 'plus-circle'
-            : 'account-arrow-right'
-          }
-          size={22}
-          color={Colors.textDark}
-        />
-        <Text style={styles.startButtonText}>
-          {!isOnline ? t('setup.startGame')
-            : onlineMode === 'create' ? t('setup.createRoom')
-            : t('setup.joinRoom')}
-        </Text>
-      </Pressable>
+            {/* Content panel */}
+            <View style={styles.onlinePanelCard}>
+              {onlineMode === 'create' && (
+                <>
+                  <View>
+                    <Text style={styles.label}>{t('setup.gameMode')}</Text>
+                    <View style={styles.playerCountRow}>
+                      {([{ count: 2, label: '1v1' }, { count: 4, label: '2v2' }] as const).map(({ count, label }) => (
+                        <Pressable
+                          key={count}
+                          style={[styles.countButton, playerCount === count && styles.countButtonActive]}
+                          onPress={() => setPlayerCount(count)}
+                          testID={`count-${count}-btn`}
+                        >
+                          <Text style={[styles.countText, playerCount === count && styles.countTextActive]}>
+                            {label}
+                          </Text>
+                          <Text style={[styles.countLabel, playerCount === count && styles.countLabelActive]}>
+                            {t('setup.players', { count })}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View>
+                    <Text style={styles.label}>{t('setup.visibility')}</Text>
+                    <View style={styles.toggleContainer}>
+                      <Pressable
+                        style={[styles.toggleButton, isPublic && styles.toggleActive]}
+                        onPress={() => setIsPublic(true)}
+                      >
+                        <MaterialCommunityIcons name="earth" size={14} color={isPublic ? Colors.textDark : Colors.textSecondary} />
+                        <Text style={[styles.toggleText, isPublic && styles.toggleTextActive]}>{t('setup.public')}</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.toggleButton, !isPublic && styles.toggleActive]}
+                        onPress={() => setIsPublic(false)}
+                      >
+                        <MaterialCommunityIcons name="lock" size={14} color={!isPublic ? Colors.textDark : Colors.textSecondary} />
+                        <Text style={[styles.toggleText, !isPublic && styles.toggleTextActive]}>{t('setup.private')}</Text>
+                      </Pressable>
+                    </View>
+                    <Text style={styles.hintText}>{t(isPublic ? 'setup.publicHint' : 'setup.privateHint')}</Text>
+                  </View>
+                </>
+              )}
+
+              {onlineMode === 'join' && (
+                <View>
+                  <Text style={styles.label}>{t('setup.roomCode')}</Text>
+                  <TextInput
+                    style={styles.roomCodeInput}
+                    value={roomCode}
+                    onChangeText={(txt) => setRoomCode(txt.toUpperCase())}
+                    placeholder={t('setup.enterRoomCode')}
+                    placeholderTextColor={Colors.textSecondary}
+                    maxLength={6}
+                    autoCapitalize="characters"
+                    testID="room-code-input"
+                  />
+                  <View style={styles.roomCodeMeta}>
+                    <Text style={styles.roomCodeCount}>{roomCode.length}/5</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          </>
+        )}
+
+        {!isOnline && (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.label}>{t('setup.gameMode')}</Text>
+              <View style={styles.playerCountRow}>
+                {([{ count: 2, label: '1v1' }, { count: 4, label: '2v2' }] as const).map(({ count, label }) => (
+                  <Pressable
+                    key={count}
+                    style={[styles.countButton, playerCount === count && styles.countButtonActive]}
+                    onPress={() => setPlayerCount(count)}
+                    testID={`count-${count}-btn`}
+                  >
+                    <Text style={[styles.countText, playerCount === count && styles.countTextActive]}>
+                      {label}
+                    </Text>
+                    <Text style={[styles.countLabel, playerCount === count && styles.countLabelActive]}>
+                      {count === 2 ? t('setup.youVsAI') : t('setup.youAIvsAI')}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.infoCard}>
+              <MaterialCommunityIcons name="robot" size={20} color={Colors.gold} />
+              <Text style={styles.infoText}>{t('setup.aiInfo')}</Text>
+            </View>
+          </>
+        )}
+
+        <View style={{ flex: 1 }} />
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.startButton,
+            pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+            startDisabled && styles.startButtonDisabled,
+          ]}
+          onPress={handleStart}
+          disabled={startDisabled}
+          testID="start-btn"
+        >
+          <MaterialCommunityIcons
+            name={
+              !isOnline ? 'sword-cross'
+              : onlineMode === 'create' ? 'plus-circle'
+              : 'account-arrow-right'
+            }
+            size={22}
+            color={Colors.textDark}
+          />
+          <Text style={styles.startButtonText}>
+            {!isOnline ? t('setup.startGame')
+              : onlineMode === 'create' ? t('setup.createRoom')
+              : t('setup.joinRoom')}
+          </Text>
+        </Pressable>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: Colors.background,
-    paddingHorizontal: 24,
+  },
+  content: {
+    flexGrow: 1,
   },
   backButton: {
     width: 44,

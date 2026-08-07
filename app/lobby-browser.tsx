@@ -15,6 +15,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import type { PublicRoomInfo } from '@/shared/lib/types/messages';
@@ -64,6 +65,7 @@ export default function LobbyBrowserScreen() {
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+  const contentPadding = useContentPadding(24);
   useLanguage();
 
   const [modeFilter, setModeFilter] = useState<ModeFilter>('all');
@@ -91,7 +93,7 @@ export default function LobbyBrowserScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20 }]}>
+    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20, paddingHorizontal: contentPadding }]}>
       <LinearGradient
         colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
         style={StyleSheet.absoluteFill}

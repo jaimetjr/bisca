@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, StyleSheet, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/shared/constants/colors';
@@ -61,7 +61,16 @@ export default function DeleteAccountModal({ visible, onClose }: DeleteAccountMo
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      {/* Scrolls rather than clips: this card is ~460dp of icon, body text,
+          password field and two buttons, and on a small phone the keyboard
+          takes half the screen the moment the field is focused. `flexGrow: 1`
+          keeps it centred while it fits. */}
+      <ScrollView
+        style={styles.overlay}
+        contentContainerStyle={styles.overlayContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.card} testID="delete-account-modal">
           <View style={styles.iconCircle}>
             <MaterialCommunityIcons name="alert-outline" size={30} color={Colors.danger} />
@@ -102,7 +111,7 @@ export default function DeleteAccountModal({ visible, onClose }: DeleteAccountMo
             <Text style={styles.cancelBtnText}>{t('settings.cancel')}</Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
@@ -111,6 +120,9 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: Colors.overlay,
+  },
+  overlayContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,

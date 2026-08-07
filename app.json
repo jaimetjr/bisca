@@ -13,7 +13,7 @@
       "backgroundColor": "#1a472a"
     },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "com.jaimetjr.bisca"
     },
     "androidNavigationBar": {

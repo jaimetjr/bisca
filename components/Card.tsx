@@ -2,13 +2,13 @@ import React, { useRef, useCallback } from 'react';
 import { View, Pressable, StyleSheet, Animated } from 'react-native';
 import Colors from '@/shared/constants/colors';
 import { Card as CardType } from '@/shared/lib/types';
-import CardSprite from '@/components/CardSprite';
+import CardSprite, { CardSize } from '@/components/CardSprite';
 
 interface CardProps {
   card: CardType;
   onPress?: () => void;
   disabled?: boolean;
-  size?: 'small' | 'medium' | 'large';
+  size?: CardSize;
   faceDown?: boolean;
   highlighted?: boolean;
   hinted?: boolean;

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, useWindowDimensions } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 import Colors from "@/shared/constants/colors";
+import { useContentPadding } from "@shared/hooks/useContentPadding";
 import { t } from '@/shared/i18n';
 import TutorialModal from '@/components/Tutorial';
 import { useAuth } from '@shared/hooks/useAuth';
@@ -24,21 +25,36 @@ const BANNER_AD_UNIT_ID = __DEV__
       android: process.env.EXPO_PUBLIC_ADMOB_BANNER_ANDROID,
     }) ?? TestIds.BANNER;
 
-// Usable dp height (window minus safe areas and container padding) the fixed-dp
-// column was designed for. The home screen must fit without scrolling, so on
-// shorter screens every size-driving value is multiplied by usable/REF (floored
-// at 0.75 so extreme window sizes don't shrink it into illegibility).
+// Usable dp height (window minus safe areas and container padding) this column
+// was laid out for. Shorter screens compress towards `MIN_AIR_SCALE`.
 const REF_USABLE_HEIGHT = 800;
+
+/**
+ * How far the vertical air may compress on a short screen.
+ *
+ * This used to be 0.75 and it scaled *everything* — type, icons and touch
+ * targets included — which shrank the buttons on any phone that was merely a
+ * bit short, and still overflowed on a small one, where the screen had no
+ * ScrollView and simply cut the content off. The screen scrolls now, so
+ * compression only has to keep the primary buttons above the fold; it does not
+ * have to make the whole column fit, and it can go further when it helps.
+ */
+const MIN_AIR_SCALE = 0.6;
 
 export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const topPadding = Platform.OS === 'web' ? 67 : insets.top;
     const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
     const { height: windowHeight } = useWindowDimensions();
+    const contentPadding = useContentPadding(24);
     const usableHeight = windowHeight - topPadding - bottomPadding - 40;
-    const scale = Math.max(0.75, Math.min(1, usableHeight / REF_USABLE_HEIGHT));
-    const s = useCallback((n: number) => Math.round(n * scale), [scale]);
-    const styles = useMemo(() => makeStyles(s), [s]);
+    const scale = Math.max(MIN_AIR_SCALE, Math.min(1, usableHeight / REF_USABLE_HEIGHT));
+    // Vertical air and the decorative header only. Font sizes, icons inside
+    // controls and touch targets stay at full size on every device: a button is
+    // no easier to read or hit on a small phone for having been shrunk, and the
+    // screen scrolls if the result does not fit.
+    const air = useCallback((n: number) => Math.round(n * scale), [scale]);
+    const styles = useMemo(() => makeStyles(air), [air]);
     const { isGuest, isLoaded: guestLoaded, disableGuestMode } = useGuestMode();
     const { isPremium } = useEntitlement();
     const rewards = useRewards();
@@ -88,157 +104,174 @@ export default function HomeScreen() {
     const handleRewardedPress = () => { void showRewardedAd(); };
 
     return (
-        <View style={[styles.container, { paddingTop: topPadding + s(20), paddingBottom: bottomPadding + s(20) }]}>
+        <View style={styles.root}>
             <LinearGradient
                 colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
                 style={StyleSheet.absoluteFill}
             />
 
-            {isGuest && (
-                <Pressable style={styles.guestBanner} onPress={handleCreateAccount}>
-                    <MaterialCommunityIcons name="alert-circle-outline" size={s(16)} color={Colors.gold} />
-                    <Text style={styles.guestBannerText}>{t('home.guestBanner')}</Text>
-                    <Text style={styles.guestBannerCta}>{t('auth.createAccount')}</Text>
-                </Pressable>
-            )}
-
-            <View style={styles.topActions}>
-                <Pressable style={styles.iconBtn} onPress={() => router.push('/settings')} testID="settings-btn">
-                    <MaterialCommunityIcons name="cog" size={s(22)} color={Colors.textSecondary} />
-                </Pressable>
-                <Pressable style={styles.iconBtn} onPress={() => router.push('/stats')} testID="stats-btn">
-                    <MaterialCommunityIcons name="chart-bar" size={s(22)} color={Colors.textSecondary} />
-                </Pressable>
-                <Pressable style={styles.iconBtn} onPress={() => router.push('/quests')} testID="quests-btn">
-                    <MaterialCommunityIcons name="calendar-check" size={s(22)} color={Colors.textSecondary} />
-                </Pressable>
-                <Pressable style={styles.iconBtn} onPress={() => router.push('/achievements')} testID="achievements-btn">
-                    <MaterialCommunityIcons name="trophy-outline" size={s(22)} color={Colors.textSecondary} />
-                </Pressable>
-            </View>
-
-            <View style={styles.header}>
-                <View style={styles.logoContainer}>
-                    <MaterialCommunityIcons name="cards-playing" size={s(56)} color={Colors.gold} />
-                </View>
-                <Text style={styles.title}>{t('home.title')}</Text>
-                <Text style={styles.subtitle}>{t('home.subtitle')}</Text>
-            </View>
-
-            <View style={styles.menuContainer}>
-                <Pressable
-                    style={({ pressed }) => [styles.menuButton, styles.primaryButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-                    onPress={() => router.push({ pathname: '/setup', params: { mode: 'ai' } })}
-                    testID="play-ai-btn"
-                >
-                    <View style={styles.menuButtonIcon}>
-                        <MaterialCommunityIcons name="robot" size={s(28)} color={Colors.textDark} />
-                    </View>
-                    <View style={styles.menuButtonContent}>
-                        <Text style={styles.menuButtonTitle}>{t('home.playAI')}</Text>
-                        <Text style={styles.menuButtonDesc}>{t('home.playAIDesc')}</Text>
-                    </View>
-                    <MaterialCommunityIcons name="chevron-right" size={s(24)} color={Colors.textDark} />
-                </Pressable>
-
-                <Pressable
-                    style={({ pressed }) => [styles.menuButton, styles.secondaryButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-                    onPress={() => router.push({ pathname: '/setup', params: { mode: 'online' } })}
-                    testID="play-online-btn"
-                >
-                    <View style={styles.menuButtonIcon}>
-                        <MaterialCommunityIcons name="earth" size={s(28)} color={Colors.gold} />
-                    </View>
-                    <View style={styles.menuButtonContent}>
-                        <Text style={styles.menuButtonTitleLight}>{t('home.playOnline')}</Text>
-                        <Text style={styles.menuButtonDescLight}>{t('home.playOnlineDesc')}</Text>
-                    </View>
-                    <MaterialCommunityIcons name="chevron-right" size={s(24)} color={Colors.textSecondary} />
-                </Pressable>
-            </View>
-
-            <Pressable
-                style={({ pressed }) => [styles.practiceButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-                onPress={() => router.push({ pathname: '/game', params: { mode: 'ai', practice: '1', difficulty: 'easy', playerCount: '2', playerName: t('setup.defaultName') } })}
-                testID="practice-btn"
+            {/* `flexGrow: 1` on the content keeps the tall-screen layout exactly as
+                it was — the footer's `marginTop: 'auto'` still pins it to the
+                bottom. On a short screen the column scrolls instead of being
+                clipped, which is what left the small phone unable to reach the
+                rewarded tile or the footer at all. */}
+            <ScrollView
+                contentContainerStyle={[styles.content, {
+                    paddingTop: topPadding + air(20),
+                    paddingBottom: bottomPadding + air(20),
+                    paddingHorizontal: contentPadding,
+                }]}
+                showsVerticalScrollIndicator={false}
             >
-                <View style={styles.practiceIcon}>
-                    <MaterialCommunityIcons name="school" size={s(24)} color={Colors.success} />
-                </View>
-                <View style={styles.menuButtonContent}>
-                    <Text style={styles.practiceTitle}>{t('home.practice')}</Text>
-                    <Text style={styles.menuButtonDescLight}>{t('home.practiceDesc')}</Text>
-                </View>
-                <MaterialCommunityIcons name="chevron-right" size={s(20)} color={Colors.textSecondary} />
-            </Pressable>
+                {isGuest && (
+                    <Pressable style={styles.guestBanner} onPress={handleCreateAccount}>
+                        <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Colors.gold} />
+                        <Text style={styles.guestBannerText}>{t('home.guestBanner')}</Text>
+                        <Text style={styles.guestBannerCta}>{t('auth.createAccount')}</Text>
+                    </Pressable>
+                )}
 
-            <Pressable
-                style={({ pressed }) => [styles.rulesCard, pressed && { opacity: 0.85 }]}
-                onPress={() => setTutorialVisible(true)}
-                testID="how-to-play-btn"
-            >
-                <MaterialCommunityIcons name="book-open-variant" size={s(18)} color={Colors.gold} />
-                <Text style={styles.rulesText}>{t('home.rules')}</Text>
-                <MaterialCommunityIcons name="chevron-right" size={s(18)} color={Colors.textSecondary} />
-            </Pressable>
+                <View style={styles.topActions}>
+                    <Pressable style={styles.iconBtn} onPress={() => router.push('/settings')} testID="settings-btn">
+                        <MaterialCommunityIcons name="cog" size={22} color={Colors.textSecondary} />
+                    </Pressable>
+                    <Pressable style={styles.iconBtn} onPress={() => router.push('/stats')} testID="stats-btn">
+                        <MaterialCommunityIcons name="chart-bar" size={22} color={Colors.textSecondary} />
+                    </Pressable>
+                    <Pressable style={styles.iconBtn} onPress={() => router.push('/quests')} testID="quests-btn">
+                        <MaterialCommunityIcons name="calendar-check" size={22} color={Colors.textSecondary} />
+                    </Pressable>
+                    <Pressable style={styles.iconBtn} onPress={() => router.push('/achievements')} testID="achievements-btn">
+                        <MaterialCommunityIcons name="trophy-outline" size={22} color={Colors.textSecondary} />
+                    </Pressable>
+                </View>
 
-            {showRewardedTile && (
-                <Pressable
-                    style={({ pressed }) => [
-                        styles.rewardedTile,
-                        rewardedDisabled && styles.rewardedTileDisabled,
-                        pressed && !rewardedDisabled && { opacity: 0.85, transform: [{ scale: 0.99 }] },
-                    ]}
-                    onPress={handleRewardedPress}
-                    disabled={rewardedDisabled}
-                    testID="rewarded-skip-btn"
-                >
-                    <MaterialCommunityIcons name="gift-outline" size={s(20)} color={Colors.gold} />
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.rewardedTileTitle}>{t('rewards.skipPassTitle')}</Text>
-                        <Text style={styles.rewardedTileSubtext}>{rewardedSubtext}</Text>
+                <View style={styles.header}>
+                    <View style={styles.logoContainer}>
+                        {/* The logo and the wordmark are the only *content* that
+                            compresses: together they are ~160dp of pure brand on a
+                            screen whose job is to start a game. */}
+                        <MaterialCommunityIcons name="cards-playing" size={air(56)} color={Colors.gold} />
                     </View>
-                    {skipPasses > 0 && (
-                        <View style={styles.rewardedBadge}>
-                            <Text style={styles.rewardedBadgeText}>{skipPasses}</Text>
+                    <Text style={styles.title}>{t('home.title')}</Text>
+                    <Text style={styles.subtitle}>{t('home.subtitle')}</Text>
+                </View>
+
+                <View style={styles.menuContainer}>
+                    <Pressable
+                        style={({ pressed }) => [styles.menuButton, styles.primaryButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                        onPress={() => router.push({ pathname: '/setup', params: { mode: 'ai' } })}
+                        testID="play-ai-btn"
+                    >
+                        <View style={styles.menuButtonIcon}>
+                            <MaterialCommunityIcons name="robot" size={28} color={Colors.textDark} />
                         </View>
-                    )}
+                        <View style={styles.menuButtonContent}>
+                            <Text style={styles.menuButtonTitle}>{t('home.playAI')}</Text>
+                            <Text style={styles.menuButtonDesc}>{t('home.playAIDesc')}</Text>
+                        </View>
+                        <MaterialCommunityIcons name="chevron-right" size={24} color={Colors.textDark} />
+                    </Pressable>
+
+                    <Pressable
+                        style={({ pressed }) => [styles.menuButton, styles.secondaryButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                        onPress={() => router.push({ pathname: '/setup', params: { mode: 'online' } })}
+                        testID="play-online-btn"
+                    >
+                        <View style={styles.menuButtonIcon}>
+                            <MaterialCommunityIcons name="earth" size={28} color={Colors.gold} />
+                        </View>
+                        <View style={styles.menuButtonContent}>
+                            <Text style={styles.menuButtonTitleLight}>{t('home.playOnline')}</Text>
+                            <Text style={styles.menuButtonDescLight}>{t('home.playOnlineDesc')}</Text>
+                        </View>
+                        <MaterialCommunityIcons name="chevron-right" size={24} color={Colors.textSecondary} />
+                    </Pressable>
+                </View>
+
+                <Pressable
+                    style={({ pressed }) => [styles.practiceButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                    onPress={() => router.push({ pathname: '/game', params: { mode: 'ai', practice: '1', difficulty: 'easy', playerCount: '2', playerName: t('setup.defaultName') } })}
+                    testID="practice-btn"
+                >
+                    <View style={styles.practiceIcon}>
+                        <MaterialCommunityIcons name="school" size={24} color={Colors.success} />
+                    </View>
+                    <View style={styles.menuButtonContent}>
+                        <Text style={styles.practiceTitle}>{t('home.practice')}</Text>
+                        <Text style={styles.menuButtonDescLight}>{t('home.practiceDesc')}</Text>
+                    </View>
+                    <MaterialCommunityIcons name="chevron-right" size={20} color={Colors.textSecondary} />
                 </Pressable>
-            )}
 
-            {!isPremium && Platform.OS !== 'web' && (
-                <View style={styles.bannerContainer}>
-                    <BannerAd
-                        unitId={BANNER_AD_UNIT_ID}
-                        size={BannerAdSize.BANNER}
-                        onAdFailedToLoad={(error) => {
-                            // No retry for the banner — one failure is the give-up.
-                            reportAdLoadError('banner', error);
-                            reportAdGiveUp('banner', error);
-                        }}
-                    />
-                </View>
-            )}
+                <Pressable
+                    style={({ pressed }) => [styles.rulesCard, pressed && { opacity: 0.85 }]}
+                    onPress={() => setTutorialVisible(true)}
+                    testID="how-to-play-btn"
+                >
+                    <MaterialCommunityIcons name="book-open-variant" size={18} color={Colors.gold} />
+                    <Text style={styles.rulesText}>{t('home.rules')}</Text>
+                    <MaterialCommunityIcons name="chevron-right" size={18} color={Colors.textSecondary} />
+                </Pressable>
 
-            <View style={styles.footer}>
-                <View style={styles.footerDivider} />
-                <View style={styles.footerContent}>
-                    <View style={styles.footerItem}>
-                        <MaterialCommunityIcons name="cards" size={s(16)} color={Colors.textSecondary} />
-                        <Text style={styles.footerText}>{t('home.cards')}</Text>
+                {showRewardedTile && (
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.rewardedTile,
+                            rewardedDisabled && styles.rewardedTileDisabled,
+                            pressed && !rewardedDisabled && { opacity: 0.85, transform: [{ scale: 0.99 }] },
+                        ]}
+                        onPress={handleRewardedPress}
+                        disabled={rewardedDisabled}
+                        testID="rewarded-skip-btn"
+                    >
+                        <MaterialCommunityIcons name="gift-outline" size={20} color={Colors.gold} />
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.rewardedTileTitle}>{t('rewards.skipPassTitle')}</Text>
+                            <Text style={styles.rewardedTileSubtext}>{rewardedSubtext}</Text>
+                        </View>
+                        {skipPasses > 0 && (
+                            <View style={styles.rewardedBadge}>
+                                <Text style={styles.rewardedBadgeText}>{skipPasses}</Text>
+                            </View>
+                        )}
+                    </Pressable>
+                )}
+
+                {!isPremium && Platform.OS !== 'web' && (
+                    <View style={styles.bannerContainer}>
+                        <BannerAd
+                            unitId={BANNER_AD_UNIT_ID}
+                            size={BannerAdSize.BANNER}
+                            onAdFailedToLoad={(error) => {
+                                // No retry for the banner — one failure is the give-up.
+                                reportAdLoadError('banner', error);
+                                reportAdGiveUp('banner', error);
+                            }}
+                        />
                     </View>
-                    <View style={styles.footerDot} />
-                    <View style={styles.footerItem}>
-                        <MaterialCommunityIcons name="account-group" size={s(16)} color={Colors.textSecondary} />
-                        <Text style={styles.footerText}>{t('home.modes')}</Text>
-                    </View>
-                    <View style={styles.footerDot} />
-                    <View style={styles.footerItem}>
-                        <MaterialCommunityIcons name="trophy" size={s(16)} color={Colors.textSecondary} />
-                        <Text style={styles.footerText}>{t('home.winTarget')}</Text>
+                )}
+
+                <View style={styles.footer}>
+                    <View style={styles.footerDivider} />
+                    <View style={styles.footerContent}>
+                        <View style={styles.footerItem}>
+                            <MaterialCommunityIcons name="cards" size={16} color={Colors.textSecondary} />
+                            <Text style={styles.footerText}>{t('home.cards')}</Text>
+                        </View>
+                        <View style={styles.footerDot} />
+                        <View style={styles.footerItem}>
+                            <MaterialCommunityIcons name="account-group" size={16} color={Colors.textSecondary} />
+                            <Text style={styles.footerText}>{t('home.modes')}</Text>
+                        </View>
+                        <View style={styles.footerDot} />
+                        <View style={styles.footerItem}>
+                            <MaterialCommunityIcons name="trophy" size={16} color={Colors.textSecondary} />
+                            <Text style={styles.footerText}>{t('home.winTarget')}</Text>
+                        </View>
                     </View>
                 </View>
-            </View>
+            </ScrollView>
 
             <TutorialModal visible={tutorialVisible} onClose={closeTutorial} />
         </View>
@@ -246,66 +279,72 @@ export default function HomeScreen() {
 }
 
 
-// The BannerAd is intentionally excluded from scaling — AdMob banners render at
-// a fixed 320x50, so only its margin shrinks.
-const makeStyles = (s: (n: number) => number) => StyleSheet.create({
-    container: {
+// `air()` compresses vertical rhythm and the brand header on short screens.
+// Everything else is a fixed dp value on purpose: font sizes, the icons inside
+// controls, and anything that is a touch target. The BannerAd is untouched
+// either way — AdMob banners render at a fixed 320x50, so only its margin moves.
+const makeStyles = (air: (n: number) => number) => StyleSheet.create({
+    root: {
         flex: 1,
         backgroundColor: Colors.background,
-        paddingHorizontal: s(24),
+    },
+    content: {
+        flexGrow: 1,
     },
     topActions: {
         flexDirection: 'row',
         justifyContent: 'flex-end',
-        gap: s(8),
-        marginBottom: s(8),
+        gap: 8,
+        marginBottom: air(8),
     },
     iconBtn: {
-        width: s(40),
-        height: s(40),
-        borderRadius: s(20),
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         backgroundColor: Colors.whiteAlpha,
         justifyContent: 'center',
         alignItems: 'center',
     },
     header: {
         alignItems: 'center',
-        marginBottom: s(40),
+        marginBottom: air(40),
     },
     logoContainer: {
-        width: s(96),
-        height: s(96),
-        borderRadius: s(48),
+        width: air(96),
+        height: air(96),
+        borderRadius: air(48),
         backgroundColor: Colors.whiteAlpha,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: s(16),
+        marginBottom: air(16),
         borderWidth: 2,
         borderColor: Colors.gold,
     },
     title: {
-        fontSize: s(44),
+        fontSize: air(44),
         fontFamily: 'Inter_700Bold',
         color: Colors.gold,
         letterSpacing: 2,
     },
     subtitle: {
-        fontSize: s(14),
+        fontSize: 14,
         fontFamily: 'Inter_400Regular',
         color: Colors.textSecondary,
-        marginTop: s(4),
+        marginTop: 4,
     },
     menuContainer: {
-        gap: s(14),
-        marginBottom: s(28),
+        gap: air(14),
+        marginBottom: air(28),
     },
     menuButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: s(18),
-        paddingHorizontal: s(16),
-        borderRadius: s(16),
-        gap: s(14),
+        // Only the padding compresses; the 48dp icon inside keeps the button a
+        // comfortable target however short the screen is.
+        paddingVertical: air(18),
+        paddingHorizontal: 16,
+        borderRadius: 16,
+        gap: 14,
     },
     primaryButton: {
         backgroundColor: Colors.gold,
@@ -321,9 +360,9 @@ const makeStyles = (s: (n: number) => number) => StyleSheet.create({
         borderColor: Colors.whiteAlpha,
     },
     menuButtonIcon: {
-        width: s(48),
-        height: s(48),
-        borderRadius: s(14),
+        width: 48,
+        height: 48,
+        borderRadius: 14,
         backgroundColor: 'rgba(0,0,0,0.08)',
         justifyContent: 'center',
         alignItems: 'center',
@@ -332,23 +371,23 @@ const makeStyles = (s: (n: number) => number) => StyleSheet.create({
         flex: 1,
     },
     menuButtonTitle: {
-        fontSize: s(18),
+        fontSize: 18,
         fontFamily: 'Inter_700Bold',
         color: Colors.textDark,
     },
     menuButtonTitleLight: {
-        fontSize: s(18),
+        fontSize: 18,
         fontFamily: 'Inter_700Bold',
         color: Colors.white,
     },
     menuButtonDesc: {
-        fontSize: s(12),
+        fontSize: 12,
         fontFamily: 'Inter_400Regular',
         color: 'rgba(0,0,0,0.5)',
         marginTop: 2,
     },
     menuButtonDescLight: {
-        fontSize: s(12),
+        fontSize: 12,
         fontFamily: 'Inter_400Regular',
         color: Colors.textSecondary,
         marginTop: 2,
@@ -356,57 +395,58 @@ const makeStyles = (s: (n: number) => number) => StyleSheet.create({
     practiceButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: s(14),
-        paddingHorizontal: s(16),
-        borderRadius: s(14),
-        gap: s(14),
+        paddingVertical: air(14),
+        paddingHorizontal: 16,
+        borderRadius: 14,
+        gap: 14,
         backgroundColor: 'rgba(46, 125, 50, 0.15)',
         borderWidth: 1,
         borderColor: 'rgba(46, 125, 50, 0.5)',
-        marginBottom: s(14),
+        marginBottom: air(14),
     },
     practiceIcon: {
-        width: s(44),
-        height: s(44),
-        borderRadius: s(12),
+        width: 44,
+        height: 44,
+        borderRadius: 12,
         backgroundColor: 'rgba(0,0,0,0.12)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     practiceTitle: {
-        fontSize: s(16),
+        fontSize: 16,
         fontFamily: 'Inter_700Bold',
         color: Colors.white,
     },
     rulesCard: {
         flexDirection: 'row',
         backgroundColor: Colors.whiteAlpha2,
-        borderRadius: s(12),
-        padding: s(14),
-        gap: s(10),
+        borderRadius: 12,
+        padding: 14,
+        gap: 10,
         alignItems: 'flex-start',
-        marginBottom: s(28),
+        marginBottom: air(28),
     },
     rulesText: {
         flex: 1,
         color: Colors.textSecondary,
-        fontSize: s(13),
+        fontSize: 13,
         fontFamily: 'Inter_400Regular',
-        lineHeight: s(20),
+        lineHeight: 20,
     },
     footer: {
         marginTop: 'auto',
+        paddingTop: air(16),
     },
     footerDivider: {
         height: 1,
         backgroundColor: Colors.whiteAlpha,
-        marginBottom: s(16),
+        marginBottom: air(16),
     },
     footerContent: {
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
-        gap: s(12),
+        gap: 12,
     },
     footerItem: {
         flexDirection: 'row',
@@ -421,74 +461,74 @@ const makeStyles = (s: (n: number) => number) => StyleSheet.create({
     },
     footerText: {
         color: Colors.textSecondary,
-        fontSize: s(12),
+        fontSize: 12,
         fontFamily: 'Inter_500Medium',
     },
     guestBanner: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: s(8),
+        gap: 8,
         backgroundColor: Colors.whiteAlpha,
         borderWidth: 1,
         borderColor: Colors.gold,
-        borderRadius: s(10),
-        paddingVertical: s(10),
-        paddingHorizontal: s(14),
-        marginBottom: s(12),
+        borderRadius: 10,
+        paddingVertical: air(10),
+        paddingHorizontal: 14,
+        marginBottom: air(12),
     },
     guestBannerText: {
         flex: 1,
         color: Colors.textSecondary,
-        fontSize: s(12),
+        fontSize: 12,
         fontFamily: 'Inter_400Regular',
     },
     guestBannerCta: {
         color: Colors.gold,
-        fontSize: s(12),
+        fontSize: 12,
         fontFamily: 'Inter_600SemiBold',
     },
     bannerContainer: {
         alignItems: 'center',
-        marginBottom: s(8),
+        marginBottom: air(8),
     },
     rewardedTile: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: s(12),
+        gap: 12,
         backgroundColor: Colors.whiteAlpha2,
         borderWidth: 1,
         borderColor: Colors.whiteAlpha,
-        borderRadius: s(12),
-        paddingVertical: s(12),
-        paddingHorizontal: s(14),
-        marginBottom: s(12),
+        borderRadius: 12,
+        paddingVertical: air(12),
+        paddingHorizontal: 14,
+        marginBottom: air(12),
     },
     rewardedTileDisabled: {
         opacity: 0.5,
     },
     rewardedTileTitle: {
         color: Colors.white,
-        fontSize: s(13),
+        fontSize: 13,
         fontFamily: 'Inter_600SemiBold',
     },
     rewardedTileSubtext: {
         color: Colors.textSecondary,
-        fontSize: s(11),
+        fontSize: 11,
         fontFamily: 'Inter_400Regular',
         marginTop: 2,
     },
     rewardedBadge: {
         backgroundColor: Colors.gold,
-        minWidth: s(24),
-        height: s(24),
-        borderRadius: s(12),
+        minWidth: 24,
+        height: 24,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: s(8),
+        paddingHorizontal: 8,
     },
     rewardedBadgeText: {
         color: Colors.textDark,
-        fontSize: s(12),
+        fontSize: 12,
         fontFamily: 'Inter_700Bold',
     },
 });

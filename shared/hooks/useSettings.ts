@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AIDifficulty } from '../lib/types';
+import { CardBackId, DEFAULT_CARD_BACK } from '../lib/brisca/card-backs';
 
 const SETTINGS_KEY = '@bisca:settings';
 
@@ -8,12 +9,14 @@ export interface AppSettings {
   aiDifficulty: AIDifficulty;
   gameSpeed: 'slow' | 'normal' | 'fast';
   language: string;
+  cardBack: CardBackId;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   aiDifficulty: 'medium',
   gameSpeed: 'normal',
   language: 'en',
+  cardBack: DEFAULT_CARD_BACK,
 };
 
 export function useSettings() {

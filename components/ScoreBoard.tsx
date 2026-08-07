@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/shared/constants/colors';
 import { Player } from '@/shared/lib/types';
@@ -16,6 +16,30 @@ interface ScoreBoardProps {
   forfeitedBy?: string;
 }
 
+/**
+ * Full-screen backdrop for the result card.
+ *
+ * The card is centred in an overlay that clips, so anything taller than the
+ * screen loses both ends — and Play again / Menu are the last thing in it. A 2v2
+ * board with a forfeit note on a small phone is already close to that edge, and
+ * a larger system font tips it over. Scrolling costs nothing while it fits:
+ * `flexGrow: 1` keeps the card centred exactly as before.
+ */
+function Backdrop({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={styles.container}>
+      <View style={styles.overlay} />
+      <ScrollView
+        style={StyleSheet.absoluteFill}
+        contentContainerStyle={styles.backdropContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
 export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeitedBy }: ScoreBoardProps) {
   useLanguage();
   const teamMode = isTeamGame(players);
@@ -30,8 +54,7 @@ export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReas
   const isForfeit = endReason === 'forfeit';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.overlay} />
+    <Backdrop>
       <View style={styles.modal}>
         <MaterialCommunityIcons
           name={isDraw ? 'handshake' : 'trophy'}
@@ -85,7 +108,7 @@ export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReas
           </Pressable>
         </View>
       </View>
-    </View>
+    </Backdrop>
   );
 }
 
@@ -101,8 +124,7 @@ function TeamScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeit
   const isForfeit = endReason === 'forfeit';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.overlay} />
+    <Backdrop>
       <View style={styles.modal}>
         <MaterialCommunityIcons
           name={isDraw ? 'handshake' : 'trophy'}
@@ -162,7 +184,7 @@ function TeamScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeit
           </Pressable>
         </View>
       </View>
-    </View>
+    </Backdrop>
   );
 }
 
@@ -176,6 +198,14 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: Colors.overlay,
+  },
+  backdropContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // Vertical only: the card's width is a percentage of the container, so
+    // horizontal padding here would quietly narrow it.
+    paddingVertical: 24,
   },
   modal: {
     backgroundColor: Colors.backgroundDark,
