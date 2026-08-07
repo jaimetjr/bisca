@@ -55,6 +55,7 @@ const WS_CODE_KEYS: Record<string, string> = {
   INVALID_CARD: 'ws.invalidCard',
   MUST_FOLLOW_SUIT: 'ws.mustFollowSuit',
   HOST_LEFT: 'ws.hostLeft',
+  APP_OUTDATED: 'ws.appOutdated',
 };
 
 /** Translate a WS error by its code, falling back to the server's message. */

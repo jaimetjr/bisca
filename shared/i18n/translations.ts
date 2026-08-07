@@ -337,6 +337,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'Invalid card',
     'ws.mustFollowSuit': 'You must follow suit',
     'ws.hostLeft': 'The host left the room',
+    'ws.appOutdated': 'Update Bisca to keep playing online',
 
     'achievement.first_win.title': 'First Win',
     'achievement.first_win.desc': 'Win your first game.',
@@ -697,6 +698,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'Carta no válida',
     'ws.mustFollowSuit': 'Debes seguir el palo',
     'ws.hostLeft': 'El anfitrión abandonó la sala',
+    'ws.appOutdated': 'Actualiza Bisca para seguir jugando en línea',
 
     'achievement.first_win.title': 'Primera Victoria',
     'achievement.first_win.desc': 'Gana tu primera partida.',
@@ -1057,6 +1059,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'Carte invalide',
     'ws.mustFollowSuit': 'Vous devez fournir la couleur',
     'ws.hostLeft': 'L\'hôte a quitté la salle',
+    'ws.appOutdated': 'Mettez Bisca à jour pour continuer à jouer en ligne',
 
     'achievement.first_win.title': 'Première Victoire',
     'achievement.first_win.desc': 'Gagnez votre première partie.',
@@ -1417,6 +1420,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'Carta inválida',
     'ws.mustFollowSuit': 'Você precisa seguir o naipe',
     'ws.hostLeft': 'O anfitrião saiu da sala',
+    'ws.appOutdated': 'Atualize o Bisca para continuar jogando online',
 
     'achievement.first_win.title': 'Primeira Vitória',
     'achievement.first_win.desc': 'Vença sua primeira partida.',
@@ -1777,6 +1781,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'Carta non valida',
     'ws.mustFollowSuit': 'Devi rispondere al seme',
     'ws.hostLeft': 'L\'host ha lasciato la stanza',
+    'ws.appOutdated': 'Aggiorna Bisca per continuare a giocare online',
 
     'achievement.first_win.title': 'Prima Vittoria',
     'achievement.first_win.desc': 'Vinci la tua prima partita.',
@@ -2137,6 +2142,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'Ungültige Karte',
     'ws.mustFollowSuit': 'Du musst Farbe bedienen',
     'ws.hostLeft': 'Der Gastgeber hat den Raum verlassen',
+    'ws.appOutdated': 'Aktualisiere Bisca, um weiter online zu spielen',
 
     'achievement.first_win.title': 'Erster Sieg',
     'achievement.first_win.desc': 'Gewinne dein erstes Spiel.',
@@ -2497,6 +2503,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': '無効なカードです',
     'ws.mustFollowSuit': '同じスートを出す必要があります',
     'ws.hostLeft': 'ホストが部屋を退出しました',
+    'ws.appOutdated': 'オンラインで遊び続けるにはBiscaを更新してください',
 
     'achievement.first_win.title': '初勝利',
     'achievement.first_win.desc': '初めての対戦に勝利する。',
@@ -2857,6 +2864,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': '无效的牌',
     'ws.mustFollowSuit': '必须跟随花色',
     'ws.hostLeft': '房主已离开房间',
+    'ws.appOutdated': '请更新 Bisca 以继续在线游戏',
 
     'achievement.first_win.title': '首胜',
     'achievement.first_win.desc': '赢得你的第一场比赛。',
@@ -3217,6 +3225,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': '유효하지 않은 카드입니다',
     'ws.mustFollowSuit': '같은 무늬를 내야 합니다',
     'ws.hostLeft': '호스트가 방을 나갔습니다',
+    'ws.appOutdated': '온라인 플레이를 계속하려면 Bisca를 업데이트하세요',
 
     'achievement.first_win.title': '첫 승리',
     'achievement.first_win.desc': '첫 게임에서 승리하세요.',
@@ -3577,6 +3586,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'ورقة غير صالحة',
     'ws.mustFollowSuit': 'يجب أن تتبع النوع',
     'ws.hostLeft': 'غادر المضيف الغرفة',
+    'ws.appOutdated': 'حدّث Bisca لمواصلة اللعب عبر الإنترنت',
 
     'achievement.first_win.title': 'أول فوز',
     'achievement.first_win.desc': 'افز بأول مباراة لك.',
@@ -3937,6 +3947,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'Недопустимая карта',
     'ws.mustFollowSuit': 'Нужно ходить в масть',
     'ws.hostLeft': 'Хост покинул комнату',
+    'ws.appOutdated': 'Обновите Bisca, чтобы продолжить играть онлайн',
 
     'achievement.first_win.title': 'Первая победа',
     'achievement.first_win.desc': 'Выиграйте первую партию.',
@@ -4297,6 +4308,7 @@ export const translations: Record<string, Record<string, string>> = {
     'ws.invalidCard': 'Ongeldige kaart',
     'ws.mustFollowSuit': 'Je moet kleur bekennen',
     'ws.hostLeft': 'De host heeft de kamer verlaten',
+    'ws.appOutdated': 'Werk Bisca bij om online te blijven spelen',
 
     'achievement.first_win.title': 'Eerste Overwinning',
     'achievement.first_win.desc': 'Win je eerste spel.',

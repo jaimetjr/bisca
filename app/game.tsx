@@ -29,6 +29,7 @@ import { explainTrick } from '@/shared/lib/brisca/trick-explain';
 import { reviewTrick, TrickReview } from '@/shared/lib/brisca/trick-review';
 import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { wsErrorText } from '@/shared/lib/api-errors';
+import { getAppVersion } from '@/shared/lib/app-version';
 import { useSettings } from '@/shared/hooks/useSettings';
 import { takeGameWs } from '@/shared/ws-store';
 import { useLanguage } from '@shared/hooks/useLanguage';
@@ -190,7 +191,7 @@ export default function GameScreen() {
         // New connection — must re-register with server once open
         ws.onopen = () => {
           setIsReconnecting(true);
-          sendWsMessage({ type: 'reconnect', playerId, reconnectToken: reconnectTokenRef.current });
+          sendWsMessage({ type: 'reconnect', playerId, reconnectToken: reconnectTokenRef.current, appVersion: getAppVersion() });
         };
       }
 

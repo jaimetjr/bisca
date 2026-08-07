@@ -10,13 +10,18 @@ export interface PublicRoomInfo {
   mode: '1v1' | '2v2';
 }
 
+// `appVersion` is the client's own app.json version, carried on the three
+// messages that enter a room so the server can turn away builds too old for
+// the current protocol (see MIN_APP_VERSION in server/game-rooms.ts). It stays
+// optional forever: the builds already installed do not send it, and a missing
+// value is read as "oldest possible".
 export type ClientMessage =
-  | { type: 'create_room'; playerName: string; maxPlayers: number; isPublic?: boolean; strictFollowSuit?: boolean }
-  | { type: 'join_room'; roomCode: string; playerName: string; preferredTeam?: 0 | 1 }
+  | { type: 'create_room'; playerName: string; maxPlayers: number; isPublic?: boolean; strictFollowSuit?: boolean; appVersion?: string }
+  | { type: 'join_room'; roomCode: string; playerName: string; preferredTeam?: 0 | 1; appVersion?: string }
   | { type: 'switch_team'; team: 0 | 1 }
   | { type: 'start_game' }
   | { type: 'play_card'; cardId: string }
-  | { type: 'reconnect'; playerId: string; reconnectToken?: string }
+  | { type: 'reconnect'; playerId: string; reconnectToken?: string; appVersion?: string }
   | { type: 'leave_game' };
 
 // ─── Server → Client ────────────────────────────────────────────────────────
@@ -52,4 +57,5 @@ export type ErrorCode =
   | 'NOT_HOST'
   | 'HOST_LEFT'
   | 'RATE_LIMITED'
-  | 'FORBIDDEN_ORIGIN';
+  | 'FORBIDDEN_ORIGIN'
+  | 'APP_OUTDATED';

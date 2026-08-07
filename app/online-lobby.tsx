@@ -12,6 +12,7 @@ import { getApiUrl } from '@/shared/query-client';
 import { CONNECTION_TIMEOUT_MS } from '@/shared/constants/game';
 import type { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { wsErrorText } from '@/shared/lib/api-errors';
+import { getAppVersion } from '@/shared/lib/app-version';
 import { storeGameWs } from '@/shared/ws-store';
 import { useLanguage } from '@shared/hooks/useLanguage';
 
@@ -69,8 +70,8 @@ export default function OnlineLobbyScreen() {
       ws.onopen = () => {
         if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
         const msg: ClientMessage = params.action === 'create'
-          ? { type: 'create_room', playerName: params.playerName, maxPlayers: parseInt(params.playerCount || '2', 10), isPublic: params.isPublic !== '0' }
-          : { type: 'join_room', roomCode: params.roomCode || '', playerName: params.playerName };
+          ? { type: 'create_room', playerName: params.playerName, maxPlayers: parseInt(params.playerCount || '2', 10), isPublic: params.isPublic !== '0', appVersion: getAppVersion() }
+          : { type: 'join_room', roomCode: params.roomCode || '', playerName: params.playerName, appVersion: getAppVersion() };
         ws.send(JSON.stringify(msg));
       };
 

@@ -21,6 +21,7 @@ import {
   clientMessageSchema,
   type ValidatedClientMessage,
 } from '../shared/lib/validation/client-messages';
+import { compareVersions } from '../shared/lib/version';
 import { issueReconnectToken, verifyReconnectToken } from './lib/reconnect-token';
 import { createRoomLimiter, messageLimiter } from './lib/rate-limit';
 import { logger } from './lib/logger';
@@ -40,6 +41,56 @@ const playerDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const wsClientIp = new WeakMap<WebSocket, string>();
 
 const DISCONNECT_GRACE_MS = 10_000; // 10s to reconnect before forfeit
+
+// ─── Minimum app version ─────────────────────────────────────────────────────
+
+const VERSION_PATTERN = /^\d+(\.\d+)*$/;
+let warnedFloor: string | null = null;
+
+/**
+ * The oldest app build allowed into a room, from MIN_APP_VERSION.
+ *
+ * Read per call rather than at import so raising the floor is a Railway env
+ * change plus a restart, with no code deploy — and so tests can move it.
+ *
+ * Two deliberate fail-open choices, both for the same reason (a mistake here
+ * locks every player out of multiplayer, which is worse than the incompatible
+ * client it guards against):
+ *   - unset  → '0.0.0', letting everyone in. That is how this ships.
+ *   - garbage → '0.0.0' plus a warning, instead of blocking the world over a typo.
+ */
+function minAppVersion(): string {
+  const raw = process.env.MIN_APP_VERSION?.trim();
+  if (!raw) return '0.0.0';
+  if (!VERSION_PATTERN.test(raw)) {
+    if (warnedFloor !== raw) {
+      warnedFloor = raw;
+      log.warn({ MIN_APP_VERSION: raw }, 'MIN_APP_VERSION is not a version — version gate disabled');
+    }
+    return '0.0.0';
+  }
+  return raw;
+}
+
+/**
+ * Turn away a client too old for the current protocol. Returns true when it
+ * did, in which case the caller must stop.
+ *
+ * The `message` matters as much as the code: builds shipped before this gate
+ * existed do not know APP_OUTDATED and fall back to showing this sentence
+ * verbatim (see wsErrorText in shared/lib/api-errors.ts).
+ */
+function rejectOutdatedApp(ws: WebSocket, appVersion: string | undefined): boolean {
+  const floor = minAppVersion();
+  if (compareVersions(appVersion, floor) >= 0) return false;
+  log.info({ appVersion: appVersion ?? 'none', floor }, 'rejected outdated client');
+  sendTo(ws, {
+    type: 'error',
+    message: 'Please update Bisca to keep playing online.',
+    code: 'APP_OUTDATED',
+  });
+  return true;
+}
 
 function clientIpFor(ws: WebSocket): string {
   return wsClientIp.get(ws) ?? 'unknown';
@@ -291,6 +342,10 @@ async function handleMessage(ws: WebSocket, data: ValidatedClientMessage) {
 
   switch (data.type) {
     case 'create_room': {
+      // Before the rate limiter: an outdated client should not burn someone
+      // else's budget, and "update the app" is the more useful answer anyway.
+      if (rejectOutdatedApp(ws, data.appVersion)) return;
+
       if (!createRoomLimiter.take(clientIpFor(ws))) {
         sendTo(ws, { type: 'error', message: 'Too many rooms created — try again shortly', code: 'RATE_LIMITED' });
         return;
@@ -337,6 +392,8 @@ async function handleMessage(ws: WebSocket, data: ValidatedClientMessage) {
     }
 
     case 'join_room': {
+      if (rejectOutdatedApp(ws, data.appVersion)) return;
+
       const room = await store.get(data.roomCode?.toUpperCase());
       if (!room) {
         sendTo(ws, { type: 'error', message: 'Room not found', code: 'ROOM_NOT_FOUND' });
@@ -429,6 +486,10 @@ async function handleMessage(ws: WebSocket, data: ValidatedClientMessage) {
     }
 
     case 'reconnect': {
+      // Ahead of the token check so an outdated client is told to update
+      // instead of reading INVALID_TOKEN and retrying forever.
+      if (rejectOutdatedApp(ws, data.appVersion)) return;
+
       if (!data.reconnectToken) {
         sendTo(ws, { type: 'error', message: 'Reconnect token required', code: 'INVALID_TOKEN' });
         return;
