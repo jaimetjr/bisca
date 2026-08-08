@@ -2,18 +2,19 @@ import React, { useRef, useCallback } from 'react';
 import { View, Pressable, StyleSheet, Animated } from 'react-native';
 import Colors from '@/shared/constants/colors';
 import { Card as CardType } from '@/shared/lib/types';
-import CardSprite from '@/components/CardSprite';
+import CardSprite, { CardSize } from '@/components/CardSprite';
 
 interface CardProps {
   card: CardType;
   onPress?: () => void;
   disabled?: boolean;
-  size?: 'small' | 'medium' | 'large';
+  size?: CardSize;
   faceDown?: boolean;
   highlighted?: boolean;
+  hinted?: boolean;
 }
 
-export default function GameCard({ card, onPress, disabled, size = 'medium', faceDown, highlighted }: CardProps) {
+export default function GameCard({ card, onPress, disabled, size = 'medium', faceDown, highlighted, hinted }: CardProps) {
   const playAnim = useRef(new Animated.Value(0)).current;
   const isAnimating = useRef(false);
 
@@ -48,6 +49,7 @@ export default function GameCard({ card, onPress, disabled, size = 'medium', fac
     <View style={[
       styles.cardWrapper,
       highlighted && styles.highlighted,
+      hinted && styles.hinted,
       disabled && styles.disabled,
     ]}>
       <CardSprite
@@ -98,6 +100,17 @@ const styles = StyleSheet.create({
     shadowColor: Colors.gold,
     shadowOpacity: 0.5,
     shadowRadius: 8,
+  },
+  // Practice-mode coach hint. Deliberately distinct from `highlighted` (which
+  // marks every playable card on your turn): a stronger green "recommended"
+  // glow so the single suggested card stands out.
+  hinted: {
+    borderWidth: 3,
+    borderColor: Colors.success,
+    borderRadius: 6,
+    shadowColor: Colors.success,
+    shadowOpacity: 0.95,
+    shadowRadius: 14,
   },
   disabled: {
     opacity: 0.5,

@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, ActivityIndicator, Alert, Share } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Platform, Pressable, ActivityIndicator, Alert, Share } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { t } from '@/shared/i18n';
 import { getApiUrl } from '@/shared/query-client';
 import { CONNECTION_TIMEOUT_MS } from '@/shared/constants/game';
 import type { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { wsErrorText } from '@/shared/lib/api-errors';
+import { getAppVersion } from '@/shared/lib/app-version';
 import { storeGameWs } from '@/shared/ws-store';
 import { useLanguage } from '@shared/hooks/useLanguage';
 
@@ -25,6 +27,7 @@ export default function OnlineLobbyScreen() {
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+  const contentPadding = useContentPadding(24);
 
   const [roomId, setRoomId] = useState(params.roomCode || '');
   const [players, setPlayers] = useState<{ id: string; name: string; team?: 0 | 1 }[]>([]);
@@ -67,8 +70,8 @@ export default function OnlineLobbyScreen() {
       ws.onopen = () => {
         if (connectionTimeoutRef.current) clearTimeout(connectionTimeoutRef.current);
         const msg: ClientMessage = params.action === 'create'
-          ? { type: 'create_room', playerName: params.playerName, maxPlayers: parseInt(params.playerCount || '2', 10), isPublic: params.isPublic !== '0' }
-          : { type: 'join_room', roomCode: params.roomCode || '', playerName: params.playerName };
+          ? { type: 'create_room', playerName: params.playerName, maxPlayers: parseInt(params.playerCount || '2', 10), isPublic: params.isPublic !== '0', appVersion: getAppVersion() }
+          : { type: 'join_room', roomCode: params.roomCode || '', playerName: params.playerName, appVersion: getAppVersion() };
         ws.send(JSON.stringify(msg));
       };
 
@@ -193,190 +196,207 @@ export default function OnlineLobbyScreen() {
   const canStart = isHost && players.length >= maxPlayers;
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20 }]}>
+    <View style={styles.root}>
       <LinearGradient
         colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
         style={StyleSheet.absoluteFill}
       />
 
-      <Pressable style={styles.backButton} onPress={() => {
-        if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
-        router.back();
-      }}>
-        <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.white} />
-      </Pressable>
+      {/* A 2v2 waiting room is two team headers, four player rows, the room
+          code card and the Start button — more than a small phone can show at
+          once, and the host's Start button is the last thing in the column.
+          `flexGrow: 1` preserves the tall-screen layout: the connecting and
+          error states still centre themselves, and the spacer below still
+          pushes Start to the bottom. */}
+      <ScrollView
+        contentContainerStyle={[styles.content, {
+          paddingTop: topPadding + 16,
+          paddingBottom: bottomPadding + 20,
+          paddingHorizontal: contentPadding,
+        }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <Pressable style={styles.backButton} onPress={() => {
+          if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
+          router.back();
+        }}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.white} />
+        </Pressable>
 
-      <Text style={styles.title}>
-        {status === 'connecting' ? t('lobby.connecting') : status === 'error' ? t('lobby.error') : t('lobby.title')}
-      </Text>
+        <Text style={styles.title}>
+          {status === 'connecting' ? t('lobby.connecting') : status === 'error' ? t('lobby.error') : t('lobby.title')}
+        </Text>
 
-      {status === 'connecting' && (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={Colors.gold} />
-          <Text style={styles.statusText}>{t('lobby.settingUp')}</Text>
-        </View>
-      )}
+        {status === 'connecting' && (
+          <View style={styles.centerContent}>
+            <ActivityIndicator size="large" color={Colors.gold} />
+            <Text style={styles.statusText}>{t('lobby.settingUp')}</Text>
+          </View>
+        )}
 
-      {status === 'error' && (
-        <View style={styles.centerContent}>
-          <MaterialCommunityIcons name="alert-circle" size={48} color={Colors.danger} />
-          <Text style={styles.errorText}>{errorMsg}</Text>
-          <Pressable
-            style={({ pressed }) => [styles.retryButton, pressed && { opacity: 0.8 }]}
-            onPress={() => {
-              setStatus('connecting');
-              setErrorMsg('');
-              gameStartedRef.current = false;
-              connectWebSocket();
-            }}
-          >
-            <Text style={styles.retryText}>{t('lobby.tryAgain')}</Text>
-          </Pressable>
-        </View>
-      )}
+        {status === 'error' && (
+          <View style={styles.centerContent}>
+            <MaterialCommunityIcons name="alert-circle" size={48} color={Colors.danger} />
+            <Text style={styles.errorText}>{errorMsg}</Text>
+            <Pressable
+              style={({ pressed }) => [styles.retryButton, pressed && { opacity: 0.8 }]}
+              onPress={() => {
+                setStatus('connecting');
+                setErrorMsg('');
+                gameStartedRef.current = false;
+                connectWebSocket();
+              }}
+            >
+              <Text style={styles.retryText}>{t('lobby.tryAgain')}</Text>
+            </Pressable>
+          </View>
+        )}
 
-      {status === 'waiting' && (
-        <>
-          <View style={styles.roomCodeCard}>
-            <Text style={styles.roomCodeLabel}>{t('lobby.roomCode')}</Text>
-            <Text style={styles.roomCode}>{roomId}</Text>
-            <Text style={styles.roomCodeHint}>{t('lobby.shareCode')}</Text>
-            {params.action === 'create' && (
-              <Pressable style={styles.shareBtn} onPress={handleShare}>
-                <MaterialCommunityIcons name="share-variant" size={16} color={Colors.textDark} />
-                <Text style={styles.shareBtnText}>{t('lobby.shareInvite')}</Text>
+        {status === 'waiting' && (
+          <>
+            <View style={styles.roomCodeCard}>
+              <Text style={styles.roomCodeLabel}>{t('lobby.roomCode')}</Text>
+              <Text style={styles.roomCode}>{roomId}</Text>
+              <Text style={styles.roomCodeHint}>{t('lobby.shareCode')}</Text>
+              {params.action === 'create' && (
+                <Pressable style={styles.shareBtn} onPress={handleShare}>
+                  <MaterialCommunityIcons name="share-variant" size={16} color={Colors.textDark} />
+                  <Text style={styles.shareBtnText}>{t('lobby.shareInvite')}</Text>
+                </Pressable>
+              )}
+            </View>
+
+            <View style={styles.playersSection}>
+              <Text style={styles.sectionLabel}>
+                {t('lobby.players', { current: players.length, max: maxPlayers })}
+              </Text>
+
+              {maxPlayers === 4 ? (
+                ([0, 1] as const).map((teamIdx) => {
+                  const teamPlayers = players.filter(p => p.team === teamIdx);
+                  const emptySlots = 2 - teamPlayers.length;
+                  const myPlayer = players.find(p => p.id === myId);
+                  const canJoinThisTeam = myPlayer?.team !== teamIdx;
+                  return (
+                    <View key={teamIdx}>
+                      <Text style={styles.teamHeader}>
+                        {t(teamIdx === 0 ? 'lobby.team1' : 'lobby.team2')}
+                      </Text>
+                      {teamPlayers.map((p) => (
+                        <View key={p.id} style={styles.playerRow}>
+                          <View style={styles.playerAvatar}>
+                            <MaterialCommunityIcons
+                              name={p.id === players[0]?.id ? 'crown' : 'account'}
+                              size={18}
+                              color={p.id === players[0]?.id ? Colors.gold : Colors.textSecondary}
+                            />
+                          </View>
+                          <Text style={styles.playerName}>{p.name}</Text>
+                          {p.id === myId && (
+                            <View style={styles.youBadge}>
+                              <Text style={styles.youText}>{t('lobby.you')}</Text>
+                            </View>
+                          )}
+                          {p.id === players[0]?.id && (
+                            <View style={styles.hostBadge}>
+                              <Text style={styles.hostText}>{t('lobby.host')}</Text>
+                            </View>
+                          )}
+                        </View>
+                      ))}
+                      {Array.from({ length: emptySlots }).map((_, i) => (
+                        <Pressable
+                          key={`empty-${teamIdx}-${i}`}
+                          style={[styles.playerRow, styles.emptySlot, canJoinThisTeam && styles.emptySlotTappable]}
+                          onPress={() => canJoinThisTeam && switchTeam(teamIdx)}
+                          disabled={!canJoinThisTeam}
+                        >
+                          <View style={[styles.playerAvatar, styles.emptyAvatar]}>
+                            <MaterialCommunityIcons
+                              name="account-plus"
+                              size={18}
+                              color={canJoinThisTeam ? Colors.gold : Colors.textSecondary}
+                            />
+                          </View>
+                          <Text style={[styles.emptyText, canJoinThisTeam && { color: Colors.gold }]}>
+                            {canJoinThisTeam ? t('lobby.joinTeam') : t('lobby.waitingPlayer')}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  );
+                })
+              ) : (
+                <>
+                  {players.map((p, i) => (
+                    <View key={p.id} style={styles.playerRow}>
+                      <View style={styles.playerAvatar}>
+                        <MaterialCommunityIcons
+                          name={i === 0 ? 'crown' : 'account'}
+                          size={18}
+                          color={i === 0 ? Colors.gold : Colors.textSecondary}
+                        />
+                      </View>
+                      <Text style={styles.playerName}>{p.name}</Text>
+                      {p.id === myId && (
+                        <View style={styles.youBadge}>
+                          <Text style={styles.youText}>{t('lobby.you')}</Text>
+                        </View>
+                      )}
+                      {i === 0 && (
+                        <View style={styles.hostBadge}>
+                          <Text style={styles.hostText}>{t('lobby.host')}</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                  {Array.from({ length: maxPlayers - players.length }).map((_, i) => (
+                    <View key={`empty-${i}`} style={[styles.playerRow, styles.emptySlot]}>
+                      <View style={[styles.playerAvatar, styles.emptyAvatar]}>
+                        <MaterialCommunityIcons name="account-plus" size={18} color={Colors.textSecondary} />
+                      </View>
+                      <Text style={styles.emptyText}>{t('lobby.waitingPlayer')}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+
+            {canStart && (
+              <View style={{ flex: 1 }} />
+            )}
+
+            {canStart && (
+              <Pressable
+                style={({ pressed }) => [styles.startButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
+                onPress={handleStartGame}
+                testID="start-game-btn"
+              >
+                <MaterialCommunityIcons name="play" size={22} color={Colors.textDark} />
+                <Text style={styles.startButtonText}>{t('lobby.startGame')}</Text>
               </Pressable>
             )}
-          </View>
 
-          <View style={styles.playersSection}>
-            <Text style={styles.sectionLabel}>
-              {t('lobby.players', { current: players.length, max: maxPlayers })}
-            </Text>
-
-            {maxPlayers === 4 ? (
-              ([0, 1] as const).map((teamIdx) => {
-                const teamPlayers = players.filter(p => p.team === teamIdx);
-                const emptySlots = 2 - teamPlayers.length;
-                const myPlayer = players.find(p => p.id === myId);
-                const canJoinThisTeam = myPlayer?.team !== teamIdx;
-                return (
-                  <View key={teamIdx}>
-                    <Text style={styles.teamHeader}>
-                      {t(teamIdx === 0 ? 'lobby.team1' : 'lobby.team2')}
-                    </Text>
-                    {teamPlayers.map((p) => (
-                      <View key={p.id} style={styles.playerRow}>
-                        <View style={styles.playerAvatar}>
-                          <MaterialCommunityIcons
-                            name={p.id === players[0]?.id ? 'crown' : 'account'}
-                            size={18}
-                            color={p.id === players[0]?.id ? Colors.gold : Colors.textSecondary}
-                          />
-                        </View>
-                        <Text style={styles.playerName}>{p.name}</Text>
-                        {p.id === myId && (
-                          <View style={styles.youBadge}>
-                            <Text style={styles.youText}>{t('lobby.you')}</Text>
-                          </View>
-                        )}
-                        {p.id === players[0]?.id && (
-                          <View style={styles.hostBadge}>
-                            <Text style={styles.hostText}>{t('lobby.host')}</Text>
-                          </View>
-                        )}
-                      </View>
-                    ))}
-                    {Array.from({ length: emptySlots }).map((_, i) => (
-                      <Pressable
-                        key={`empty-${teamIdx}-${i}`}
-                        style={[styles.playerRow, styles.emptySlot, canJoinThisTeam && styles.emptySlotTappable]}
-                        onPress={() => canJoinThisTeam && switchTeam(teamIdx)}
-                        disabled={!canJoinThisTeam}
-                      >
-                        <View style={[styles.playerAvatar, styles.emptyAvatar]}>
-                          <MaterialCommunityIcons
-                            name="account-plus"
-                            size={18}
-                            color={canJoinThisTeam ? Colors.gold : Colors.textSecondary}
-                          />
-                        </View>
-                        <Text style={[styles.emptyText, canJoinThisTeam && { color: Colors.gold }]}>
-                          {canJoinThisTeam ? t('lobby.joinTeam') : t('lobby.waitingPlayer')}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                );
-              })
-            ) : (
-              <>
-                {players.map((p, i) => (
-                  <View key={p.id} style={styles.playerRow}>
-                    <View style={styles.playerAvatar}>
-                      <MaterialCommunityIcons
-                        name={i === 0 ? 'crown' : 'account'}
-                        size={18}
-                        color={i === 0 ? Colors.gold : Colors.textSecondary}
-                      />
-                    </View>
-                    <Text style={styles.playerName}>{p.name}</Text>
-                    {p.id === myId && (
-                      <View style={styles.youBadge}>
-                        <Text style={styles.youText}>{t('lobby.you')}</Text>
-                      </View>
-                    )}
-                    {i === 0 && (
-                      <View style={styles.hostBadge}>
-                        <Text style={styles.hostText}>{t('lobby.host')}</Text>
-                      </View>
-                    )}
-                  </View>
-                ))}
-                {Array.from({ length: maxPlayers - players.length }).map((_, i) => (
-                  <View key={`empty-${i}`} style={[styles.playerRow, styles.emptySlot]}>
-                    <View style={[styles.playerAvatar, styles.emptyAvatar]}>
-                      <MaterialCommunityIcons name="account-plus" size={18} color={Colors.textSecondary} />
-                    </View>
-                    <Text style={styles.emptyText}>{t('lobby.waitingPlayer')}</Text>
-                  </View>
-                ))}
-              </>
+            {!isHost && (
+              <View style={styles.waitingMsg}>
+                <ActivityIndicator size="small" color={Colors.gold} />
+                <Text style={styles.waitingText}>{t('lobby.waitingHost')}</Text>
+              </View>
             )}
-          </View>
-
-          {canStart && (
-            <View style={{ flex: 1 }} />
-          )}
-
-          {canStart && (
-            <Pressable
-              style={({ pressed }) => [styles.startButton, pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] }]}
-              onPress={handleStartGame}
-              testID="start-game-btn"
-            >
-              <MaterialCommunityIcons name="play" size={22} color={Colors.textDark} />
-              <Text style={styles.startButtonText}>{t('lobby.startGame')}</Text>
-            </Pressable>
-          )}
-
-          {!isHost && (
-            <View style={styles.waitingMsg}>
-              <ActivityIndicator size="small" color={Colors.gold} />
-              <Text style={styles.waitingText}>{t('lobby.waitingHost')}</Text>
-            </View>
-          )}
-        </>
-      )}
+          </>
+        )}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: Colors.background,
-    paddingHorizontal: 24,
+  },
+  content: {
+    flexGrow: 1,
   },
   backButton: {
     width: 44,

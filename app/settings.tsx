@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, ScrollView, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, Platform, Pressable, ScrollView, Alert, Linking, Image } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { t, SUPPORTED_LANGUAGE_CODES } from '@/shared/i18n';
 import { useSettings, AppSettings } from '@/shared/hooks/useSettings';
 import { useLanguage } from '@shared/hooks/useLanguage';
@@ -14,6 +15,9 @@ import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
 import { getApiUrl } from '@shared/query-client';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
+import { CARD_BACK_IMAGES } from '@/components/CardSprite';
+import { CARD_BACK_IDS } from '@shared/lib/brisca/card-backs';
+import { useCardBack } from '@shared/hooks/useCardBack';
 
 // Legal pages are served by the same Express server as the API, so derive their
 // URLs from the same source of truth (EXPO_PUBLIC_DOMAIN via getApiUrl) rather
@@ -35,8 +39,10 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
+  const contentPadding = useContentPadding(24);
   const { settings, updateSettings } = useSettings();
   const { changeLanguage } = useLanguage();
+  const { changeCardBack } = useCardBack();
   const { signOut } = useAuth();
   const { isGuest, disableGuestMode } = useGuestMode();
   const { isPremium, available, purchase, restore } = useEntitlement();
@@ -89,7 +95,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20 }]}>
+    <View style={[styles.container, { paddingTop: topPadding + 16, paddingBottom: bottomPadding + 20, paddingHorizontal: contentPadding }]}>
       <LinearGradient
         colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]}
         style={StyleSheet.absoluteFill}
@@ -239,6 +245,28 @@ export default function SettingsScreen() {
           </Pressable>
         )}
 
+        {/* Appearance */}
+        <Text style={styles.sectionHeader}>{t('settings.appearance')}</Text>
+
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>{t('settings.cardBack')}</Text>
+          <View style={styles.backGrid}>
+            {CARD_BACK_IDS.map((id) => (
+              <Pressable
+                key={id}
+                style={[styles.backSwatch, settings.cardBack === id && styles.backSwatchActive]}
+                onPress={() => { updateSettings({ cardBack: id }); changeCardBack(id); }}
+                testID={`card-back-${id}`}
+              >
+                {/* The swatch is the artwork itself — you pick a card back by
+                    looking at it, not by reading a colour name, which is also
+                    why these need no translation strings. */}
+                <Image source={CARD_BACK_IMAGES[id]} style={styles.backImage} resizeMode="contain" />
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
         {/* Legal */}
         <Text style={styles.sectionHeader}>{t('settings.legal')}</Text>
 
@@ -260,6 +288,16 @@ export default function SettingsScreen() {
           <MaterialCommunityIcons name="file-document-outline" size={18} color={Colors.white} />
           <Text style={styles.accountBtnText}>{t('settings.terms')}</Text>
           <MaterialCommunityIcons name="open-in-new" size={16} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [styles.accountBtn, pressed && { opacity: 0.75 }]}
+          onPress={() => router.push('/credits')}
+          testID="settings-credits"
+        >
+          <MaterialCommunityIcons name="heart-outline" size={18} color={Colors.white} />
+          <Text style={styles.accountBtnText}>{t('settings.credits')}</Text>
+          <MaterialCommunityIcons name="chevron-right" size={16} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
         </Pressable>
       </ScrollView>
 
@@ -305,6 +343,16 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: Colors.gold },
   segmentText: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.textSecondary },
   segmentTextActive: { color: Colors.textDark },
+  backGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  backSwatch: {
+    padding: 4,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: Colors.whiteAlpha2,
+  },
+  backSwatchActive: { borderColor: Colors.gold, backgroundColor: 'rgba(212, 168, 67, 0.15)' },
+  backImage: { width: 44, height: 72 },
   languageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   languageChip: {
     paddingHorizontal: 14,

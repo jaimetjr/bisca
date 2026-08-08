@@ -27,12 +27,19 @@ const cardId = z
 
 const team = z.union([z.literal(0), z.literal(1)]);
 
+// Deliberately loose: only bounded, never pattern-checked. A malformed version
+// must reach the gate and be read as "too old", not blow up as INVALID_MESSAGE
+// — that error tells the player nothing about what to do. Zod strips unknown
+// keys, so the field has to be declared here or the gate never sees it.
+const appVersion = z.string().max(32).optional();
+
 export const createRoomSchema = z.object({
   type: z.literal('create_room'),
   playerName,
   maxPlayers: z.number().int().min(2).max(4),
   isPublic: z.boolean().optional(),
   strictFollowSuit: z.boolean().optional(),
+  appVersion,
 });
 
 export const joinRoomSchema = z.object({
@@ -40,6 +47,7 @@ export const joinRoomSchema = z.object({
   roomCode,
   playerName,
   preferredTeam: team.optional(),
+  appVersion,
 });
 
 export const switchTeamSchema = z.object({
@@ -60,6 +68,7 @@ export const reconnectSchema = z.object({
   type: z.literal('reconnect'),
   playerId,
   reconnectToken: z.string().min(1).max(512).optional(),
+  appVersion,
 });
 
 export const leaveGameSchema = z.object({

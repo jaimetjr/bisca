@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { Asset } from 'expo-asset';
 import { View, Platform } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
@@ -11,10 +12,12 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthProvider, useAuth } from '@shared/hooks/useAuth';
 import { GuestModeProvider, useGuestMode } from '@shared/hooks/useGuestMode';
 import { LanguageProvider } from '@shared/hooks/useLanguage';
+import { CardBackProvider } from '@shared/hooks/useCardBack';
 import { queryClient } from '@/shared/query-client';
 import { EntitlementProvider } from '@shared/hooks/useEntitlement';
 import { RewardsProvider } from '@shared/hooks/useRewards';
 import { consumePendingInvite } from '@/shared/lib/pending-invite';
+import { ALL_CARD_ASSETS } from '@/components/CardSprite';
 
 // Crash/error reporting. The DSN is a public identifier (safe to embed) and is
 // only set for EAS preview/production builds via eas.json — `enabled` keeps dev
@@ -129,6 +132,15 @@ function RootLayout() {
     Inter_700Bold,
   });
 
+  // Warm the card art while the player is still on the home and setup screens,
+  // so the table opens with every image resident instead of decoding the deck a
+  // card at a time during the first hand. Fire-and-forget on purpose: nothing
+  // renders behind it and a failure just means the old lazy path, so it must
+  // never block the tree or surface an error.
+  useEffect(() => {
+    Asset.loadAsync(ALL_CARD_ASSETS).catch(() => {});
+  }, []);
+
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: Colors.backgroundDark }} />;
   }
@@ -140,13 +152,15 @@ function RootLayout() {
       }
     >
       <LanguageProvider>
-        <QueryClientProvider client={queryClient}>
-          <GuestModeProvider>
-            <AuthProvider>
-              <AppWithEntitlement />
-            </AuthProvider>
-          </GuestModeProvider>
-        </QueryClientProvider>
+        <CardBackProvider>
+          <QueryClientProvider client={queryClient}>
+            <GuestModeProvider>
+              <AuthProvider>
+                <AppWithEntitlement />
+              </AuthProvider>
+            </GuestModeProvider>
+          </QueryClientProvider>
+        </CardBackProvider>
       </LanguageProvider>
     </ErrorBoundary>
   );

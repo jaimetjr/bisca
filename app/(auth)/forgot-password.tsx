@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/shared/constants/colors';
+import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { useAuth } from '@shared/hooks/useAuth';
 import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
@@ -11,6 +12,7 @@ import { validatePassword } from '@shared/lib/validation/password';
 import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
 
 export default function ForgotPasswordScreen() {
+  const contentPadding = useContentPadding(28);
   const { requestPasswordReset, resetPassword } = useAuth();
   const router = useRouter();
   useLanguage();
@@ -69,7 +71,7 @@ export default function ForgotPasswordScreen() {
         style={StyleSheet.absoluteFill}
       />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingHorizontal: contentPadding }]} keyboardShouldPersistTaps="handled">
       <View style={styles.logoContainer}>
         <MaterialCommunityIcons name="lock-reset" size={56} color={Colors.gold} />
       </View>

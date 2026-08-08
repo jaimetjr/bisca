@@ -1,14 +1,23 @@
-node_modules
-server_dist
-dist
-.expo
-.git
-.github
-.env
-.env.*
-ios
-android
-static-build
-tests
-*.log
-.DS_Store
+# The image only ever builds the server bundle. The Dockerfile copies exactly
+# package.json, package-lock.json, tsconfig.json, server/ and shared/ — so
+# everything else (9MB of Illustrator sources, the Expo app, docs, scripts)
+# was being shipped to the daemon for nothing.
+#
+# Deny-all then allow, rather than a blocklist: a new top-level folder joins
+# the context only when someone adds it here on purpose.
+*
+
+!package.json
+!package-lock.json
+!tsconfig.json
+!server
+!server/**
+!shared
+!shared/**
+
+# Never, even inside the allowed trees.
+**/node_modules
+**/.env
+**/.env.*
+**/*.log
+**/.DS_Store

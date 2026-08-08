@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Platform, Pressable, Animated, Modal, useWindowDimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, Platform, Pressable, Animated, Modal, Alert, useWindowDimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,13 +18,18 @@ import GameCard from '@/components/Card';
 import GameTable from '@/components/GameTable';
 import OpponentHand from '@/components/OpponentHand';
 import ScoreBoard from '@/components/ScoreBoard';
+import TutorialModal from '@/components/Tutorial';
 import { getApiUrl } from '@/shared/query-client';
 import { t } from '@/shared/i18n';
 import { createGameState, playCard, completeTrick } from '@/shared/lib/brisca/engine';
 import { GameState, Card, AIDifficulty } from '@/shared/lib/types';
 import { chooseAICard } from '@/shared/lib/brisca/ai';
+import { suggestPlay } from '@/shared/lib/brisca/coach';
+import { explainTrick } from '@/shared/lib/brisca/trick-explain';
+import { reviewTrick, TrickReview } from '@/shared/lib/brisca/trick-review';
 import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { wsErrorText } from '@/shared/lib/api-errors';
+import { getAppVersion } from '@/shared/lib/app-version';
 import { useSettings } from '@/shared/hooks/useSettings';
 import { takeGameWs } from '@/shared/ws-store';
 import { useLanguage } from '@shared/hooks/useLanguage';
@@ -33,9 +38,12 @@ import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
 import { useInterstitialAd } from '@shared/hooks/useInterstitialAd';
+import { CardMetricsProvider, useComputedCardMetrics } from '@shared/hooks/useCardMetrics';
 
 const AI_NAMES = ['Carlos', 'Maria', 'Pedro'];
 const HUMAN_ID = 'human';
+/** Ceiling on the measured correction fed back into the table's height. */
+const MAX_MEASURED_TABLE_GAIN = 240;
 const MAX_RECONNECT_ATTEMPTS = 3;
 
 function DealAnimatedCard({ children, index, isNew }: { children: React.ReactNode; index: number; isNew: boolean }) {
@@ -74,13 +82,13 @@ export default function GameScreen() {
     initialState?: string;
     myPlayerId?: string;
     roomCode?: string;
+    practice?: string;
   }>();
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
-  const { height: screenHeight } = useWindowDimensions();
-  const tableMaxHeight = Math.max(180, screenHeight * 0.47);
   const isOnline = params.mode === 'online';
+  const isPractice = params.practice === '1';
   const numPlayers = parseInt(params.playerCount || '2', 10);
   const playerName = params.playerName || t('setup.defaultName');
   const difficulty = (params.difficulty || 'medium') as AIDifficulty;
@@ -91,7 +99,34 @@ export default function GameScreen() {
   const [myId, setMyId] = useState(isOnline ? (params.myPlayerId || '') : HUMAN_ID);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const isMyTurn = gameState?.players[gameState.currentPlayerIndex]?.id === myId && gameState?.phase === 'playing';
+  // Card sizes come from the viewport rather than hardcoded constants. Practice
+  // mode permanently reserves room for the coach banner so the table doesn't
+  // resize when a hint appears mid-turn, and the player count matters because a
+  // 3-4 player trick area has to fit three cards across instead of one.
+  // Prefer the live game state — an online room's size isn't in the route params.
+  // Felt the column turned out not to need, measured rather than modelled — see
+  // `extraTableHeight`. Reset when the viewport changes so a rotation or a
+  // resize starts from the estimate again instead of an old correction.
+  const [extraTableHeight, setExtraTableHeight] = useState(0);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  useEffect(() => { setExtraTableHeight(0); }, [windowWidth, windowHeight]);
+  const cardMetrics = useComputedCardMetrics(
+    isPractice,
+    gameState?.players.length ?? numPlayers,
+    extraTableHeight,
+  );
   const [errorMsg, setErrorMsg] = useState('');
+  // Practice-mode coach: the currently hinted card + why, and access to the
+  // How-to-Play modal from inside the game.
+  const [hintedCardId, setHintedCardId] = useState<string | null>(null);
+  const [hintReason, setHintReason] = useState<{ key: string; params?: Record<string, number> } | null>(null);
+  // The lesson from the trick just finished. Held in state rather than derived
+  // from `phase === 'trickComplete'` so it survives past the 750ms the trick is
+  // on screen at fast speed — it stays until the player's next move, which is
+  // the only way there's time to read it.
+  const [trickReview, setTrickReview] = useState<TrickReview | null>(null);
+  const handBeforePlayRef = useRef<Card[]>([]);
+  const [tutorialVisible, setTutorialVisible] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showAfkWarning, setShowAfkWarning] = useState(false);
   const [afkSecondsLeft, setAfkSecondsLeft] = useState(30);
@@ -156,7 +191,7 @@ export default function GameScreen() {
         // New connection — must re-register with server once open
         ws.onopen = () => {
           setIsReconnecting(true);
-          sendWsMessage({ type: 'reconnect', playerId, reconnectToken: reconnectTokenRef.current });
+          sendWsMessage({ type: 'reconnect', playerId, reconnectToken: reconnectTokenRef.current, appVersion: getAppVersion() });
         };
       }
 
@@ -271,14 +306,31 @@ export default function GameScreen() {
     if (!gameState || gameState.phase !== 'trickComplete' || isOnline) return;
     trickTimerRef.current = setTimeout(() => {
       setGameState(completeTrick(gameState));
-  
+
     }, trickDisplayMs);
 
     return () => { if (trickTimerRef.current) clearTimeout(trickTimerRef.current); };
   }, [gameState?.phase, isOnline, trickDisplayMs]);
 
+  // Review the finished trick against what the player actually did. Runs once
+  // per trick, on the transition into `trickComplete`.
   useEffect(() => {
-    if (gameState?.phase !== 'gameOver' || isGuest || historySavedRef.current) return;
+    if (!isPractice || gameState?.phase !== 'trickComplete') return;
+    setTrickReview(reviewTrick({
+      trick: gameState.currentTrick,
+      trumpSuit: gameState.trumpSuit,
+      players: gameState.players,
+      playerId: myIdRef.current,
+      handBeforePlay: handBeforePlayRef.current,
+    }));
+    // Deliberately keyed on the phase alone: once the trick is complete its
+    // cards are final, so re-running on every `currentTrick` identity change
+    // would just recompute the same review.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState?.phase, isPractice]);
+
+  useEffect(() => {
+    if (gameState?.phase !== 'gameOver' || isGuest || isPractice || historySavedRef.current) return;
     historySavedRef.current = true;
 
     const humanPlayer = gameState.players.find(p => p.id === myId);
@@ -328,10 +380,40 @@ export default function GameScreen() {
     }
   }, [isMyTurn]);
 
+  // Clear any active hint whenever it stops being the human's turn (e.g. right
+  // after playing) so a stale suggestion never lingers on the next turn.
+  useEffect(() => {
+    if (!isMyTurn) {
+      setHintedCardId(null);
+      setHintReason(null);
+    }
+  }, [isMyTurn]);
+
+  const handleHint = useCallback(() => {
+    if (!gameState) return;
+    const suggestion = suggestPlay(gameState, myIdRef.current);
+    if (suggestion) {
+      setHintedCardId(suggestion.card.id);
+      setHintReason({ key: suggestion.reasonKey, params: suggestion.params });
+    }
+  }, [gameState]);
+
   const handlePlayCard = useCallback((card: Card) => {
     if (!gameState || gameState.phase !== 'playing') return;
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     if (currentPlayer.id !== myIdRef.current) return;
+
+    setHintedCardId(null);
+    setHintReason(null);
+    setTrickReview(null);
+
+    if (isPractice) {
+      // Snapshot the hand *before* the engine removes the card: reviewing the
+      // trick afterwards needs to know what else was available, and by then the
+      // played card is already gone from the hand.
+      const me = gameState.players.find(p => p.id === myIdRef.current);
+      handBeforePlayRef.current = me ? [...me.hand] : [];
+    }
 
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -342,7 +424,7 @@ export default function GameScreen() {
     } else {
       setGameState(playCard(gameState, myIdRef.current, card));
     }
-  }, [gameState, isOnline, sendWsMessage]);
+  }, [gameState, isOnline, isPractice, sendWsMessage]);
 
   if (!gameState) {
     return (
@@ -365,15 +447,32 @@ export default function GameScreen() {
 
   const opponents = gameState.players.filter(p => p.id !== myId);
   const teamMode = humanPlayer.team !== undefined;
-  const getOpponentPosition = (index: number): 'top' | 'left' | 'right' => {
-    if (opponents.length === 1) return 'top';
-    if (opponents.length === 2) return index === 0 ? 'left' : 'right';
-    if (index === 0) return 'left';
-    if (index === 1) return 'top';
-    return 'right';
-  };
+  const trickInfo = isPractice && gameState.phase === 'trickComplete'
+    ? explainTrick(gameState.currentTrick, gameState.trumpSuit, gameState.players)
+    : null;
 
+  // Banner precedence: what to do now beats what just happened, and a lesson
+  // about the player's own move beats a recap of who won.
+  const coachMessage = hintReason
+    ? { key: hintReason.key, params: hintReason.params, tone: 'hint' as const }
+    : trickReview
+      ? { key: trickReview.reasonKey, params: trickReview.params, tone: trickReview.tone }
+      : trickInfo
+        ? {
+            key: trickInfo.reasonKey,
+            params: { winner: trickInfo.winnerName, points: trickInfo.points },
+            tone: 'info' as const,
+          }
+        : null;
+
+  const COACH_TONE = {
+    hint: { icon: 'lightbulb-on' as const, color: Colors.success },
+    good: { icon: 'thumb-up-outline' as const, color: Colors.success },
+    warn: { icon: 'alert-circle-outline' as const, color: Colors.gold },
+    info: { icon: 'cards-playing-outline' as const, color: Colors.textSecondary },
+  };
   return (
+    <CardMetricsProvider value={cardMetrics}>
     <View style={[styles.container, { paddingTop: topPadding + 8, paddingBottom: bottomPadding + 8 }]}>
       <LinearGradient colors={[Colors.backgroundDark, Colors.background, Colors.backgroundDark]} style={StyleSheet.absoluteFill} />
 
@@ -420,21 +519,69 @@ export default function GameScreen() {
             <Text style={styles.turnText}>{t('game.yourTurn')}</Text>
           </Animated.View>
         )}
+        <View style={{ flex: 1 }} />
+        {isPractice && isMyTurn && (
+          <Pressable style={styles.hintBtn} onPress={handleHint} testID="hint-btn">
+            <MaterialCommunityIcons name="lightbulb-on" size={16} color={Colors.success} />
+            <Text style={styles.hintBtnText}>{t('game.hint')}</Text>
+          </Pressable>
+        )}
+        {!isOnline && (
+          <Pressable style={styles.helpBtn} onPress={() => setTutorialVisible(true)} testID="game-help-btn">
+            <MaterialCommunityIcons name="help-circle-outline" size={22} color={Colors.textSecondary} />
+          </Pressable>
+        )}
       </View>
 
-      <View style={styles.opponentsRow}>
-        {opponents.map((opp, i) => (
+      {isPractice && coachMessage && (
+        <View
+          style={[
+            styles.coachBanner,
+            {
+              borderColor: `${COACH_TONE[coachMessage.tone].color}80`,
+              backgroundColor: `${COACH_TONE[coachMessage.tone].color}22`,
+            },
+          ]}
+          testID="coach-banner"
+        >
+          <MaterialCommunityIcons
+            name={COACH_TONE[coachMessage.tone].icon}
+            size={16}
+            color={COACH_TONE[coachMessage.tone].color}
+          />
+          <Text style={styles.coachBannerText}>
+            {t(coachMessage.key, coachMessage.params as Record<string, string | number>)}
+          </Text>
+        </View>
+      )}
+
+      <View style={[styles.opponentsRow, { minHeight: cardMetrics.small.height }]}>
+        {opponents.map((opp) => (
           <OpponentHand
             key={opp.id}
             player={opp}
             isCurrentTurn={gameState.players[gameState.currentPlayerIndex]?.id === opp.id}
-            position={getOpponentPosition(i)}
             isTeammate={teamMode && opp.team === humanPlayer.team}
           />
         ))}
       </View>
 
-      <View style={[styles.tableContainer, { maxHeight: tableMaxHeight }]}>
+      {/* The table takes the whole remainder, and then reports how much that
+          actually was. Every other height here is modelled from constants, and
+          on a real device the model can be pessimistic by tens of dp — which
+          showed up as felt the cards were not allowed to use. Feeding the
+          difference back sizes them from the real box; it settles in one pass,
+          because once the metrics know the true height the difference is zero.
+          Bounded so a device that somehow never settles cannot run away. */}
+      <View
+        style={styles.tableContainer}
+        onLayout={(e) => {
+          const real = Math.round(e.nativeEvent.layout.height);
+          const missed = real - cardMetrics.tableMaxHeight;
+          if (missed < 4) return;
+          setExtraTableHeight(prev => Math.min(prev + missed, MAX_MEASURED_TABLE_GAIN));
+        }}
+      >
         <GameTable gameState={gameState} humanPlayerId={myId} />
       </View>
 
@@ -454,7 +601,14 @@ export default function GameScreen() {
         <Animated.Text style={[styles.handTurnLabel, { opacity: handGlowAnim }]}>
           {t('game.yourTurn')}
         </Animated.Text>
-        <View style={styles.hand}>
+        {/* Holds a card's worth of height even with nothing in it. On the last
+            trick every hand is empty, and without this the row collapsed to 0,
+            the opponents' rows collapsed with it, and `tableContainer` (flex: 1)
+            swallowed the lot — the felt went from 372dp to 570dp and the played
+            cards drifted to the far corners of a table that had suddenly grown
+            by half. `columnHeight()` in card-metrics has always modelled this
+            height as present all game; reserving it is what makes that true. */}
+        <View style={[styles.hand, { gap: cardMetrics.handGap, minHeight: cardMetrics.large.height }]}>
           {humanPlayer.hand.map((card, i) => {
             const isNew = !seenCardIdsRef.current.has(card.id);
             if (isNew) seenCardIdsRef.current.add(card.id);
@@ -466,6 +620,7 @@ export default function GameScreen() {
                   onPress={() => handlePlayCard(card)}
                   disabled={!isMyTurn}
                   highlighted={isMyTurn}
+                  hinted={card.id === hintedCardId}
                 />
               </DealAnimatedCard>
             );
@@ -498,6 +653,8 @@ export default function GameScreen() {
         />
       )}
 
+      <TutorialModal visible={tutorialVisible} onClose={() => setTutorialVisible(false)} />
+
       <Modal visible={showAfkWarning} transparent animationType="fade">
         <View style={styles.afkOverlay}>
           <View style={styles.afkCard}>
@@ -515,6 +672,7 @@ export default function GameScreen() {
         </View>
       </Modal>
     </View>
+    </CardMetricsProvider>
   );
 }
 
@@ -577,12 +735,53 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter_600SemiBold',
   },
+  hintBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(46, 125, 50, 0.2)',
+    borderWidth: 1,
+    borderColor: Colors.success,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  hintBtnText: {
+    color: Colors.success,
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  helpBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.whiteAlpha,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  coachBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(46, 125, 50, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(46, 125, 50, 0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  coachBannerText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    flex: 1,
+  },
   opponentsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-start',
     marginBottom: 8,
-    minHeight: 80,
   },
   tableContainer: {
     flex: 1,
@@ -604,7 +803,6 @@ const styles = StyleSheet.create({
   },
   hand: {
     flexDirection: 'row',
-    gap: 8,
     justifyContent: 'center',
   },
   afkOverlay: {
