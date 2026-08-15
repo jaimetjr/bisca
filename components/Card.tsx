@@ -14,9 +14,19 @@ interface CardProps {
   hinted?: boolean;
 }
 
+/**
+ * Border a hand card reserves, per side — the same number `card-metrics` budgets
+ * as `HAND_CARD_BORDER`. `hinted` is the widest state, so it sets the reserve
+ * and `highlighted` draws at the same width in a different colour.
+ */
+const HAND_CARD_BORDER = 3;
+
 export default function GameCard({ card, onPress, disabled, size = 'medium', faceDown, highlighted, hinted }: CardProps) {
   const playAnim = useRef(new Animated.Value(0)).current;
   const isAnimating = useRef(false);
+  // Only the hand is ever highlighted, and only the hand has the space budgeted
+  // for it — reserving on a played card would push the trick past the table.
+  const canHighlight = highlighted !== undefined || hinted !== undefined;
 
   const handlePress = useCallback(() => {
     if (!onPress || isAnimating.current) return;
@@ -48,6 +58,13 @@ export default function GameCard({ card, onPress, disabled, size = 'medium', fac
   const content = (
     <View style={[
       styles.cardWrapper,
+      // Space for the highlight is held whether or not it is lit. Switching
+      // `borderWidth` on instead grew the hand row by 4dp on your turn, the
+      // table gave those 4dp up, and `nextTableCorrection` resized the played
+      // cards to match — so the trick and the trump changed size every single
+      // turn. `card-metrics` has always budgeted `HAND_CARD_BORDER` as present
+      // all game; reserving it here is what makes that true.
+      canHighlight && styles.highlightReserve,
       highlighted && styles.highlighted,
       hinted && styles.hinted,
       disabled && styles.disabled,
@@ -93,8 +110,14 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
+  /** Holds the highlight's footprint while it is unlit, so nothing reflows. */
+  highlightReserve: {
+    borderWidth: HAND_CARD_BORDER,
+    borderColor: 'transparent',
+    borderRadius: 6,
+  },
   highlighted: {
-    borderWidth: 2,
+    borderWidth: HAND_CARD_BORDER,
     borderColor: Colors.gold,
     borderRadius: 6,
     shadowColor: Colors.gold,
@@ -105,7 +128,7 @@ const styles = StyleSheet.create({
   // marks every playable card on your turn): a stronger green "recommended"
   // glow so the single suggested card stands out.
   hinted: {
-    borderWidth: 3,
+    borderWidth: HAND_CARD_BORDER,
     borderColor: Colors.success,
     borderRadius: 6,
     shadowColor: Colors.success,

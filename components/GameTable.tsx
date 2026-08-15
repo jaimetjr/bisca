@@ -8,7 +8,7 @@ import { GameState } from '@/shared/lib/types';
 import { t, getSuitName } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import { useCardMetrics } from '@shared/hooks/useCardMetrics';
-import { CardMetrics } from '@shared/lib/brisca/card-metrics';
+import { CardMetrics, CARD_METRICS_CHROME } from '@shared/lib/brisca/card-metrics';
 
 interface GameTableProps {
   gameState: GameState;
@@ -42,16 +42,19 @@ export default function GameTable({ gameState, humanPlayerId }: GameTableProps) 
 
   // The cross pins each card to its edge; the gap between the stacked pair is
   // whatever is left over, which is why `card-metrics` has to reserve it when it
-  // sizes the card. Nothing to set here — 8 is the inset the metric assumes.
+  // sizes the card. The inset comes from the metric rather than being repeated
+  // here: the two were the same literal in two files, so changing the budget in
+  // one would have sized cards for a margin the other never drew.
+  const inset = CARD_METRICS_CHROME.playedInset;
   const getCardPosition = (position: string) => {
     switch (position) {
-      case 'bottom': return { bottom: 8, alignSelf: 'center' as const };
-      case 'top': return { top: 8, alignSelf: 'center' as const };
+      case 'bottom': return { bottom: inset, alignSelf: 'center' as const };
+      case 'top': return { top: inset, alignSelf: 'center' as const };
       // Stretched top-to-bottom and centred, rather than pinned at a magic 40%:
       // with cards sized to the viewport a fixed offset pushes tall cards off
       // the bottom of a short table.
-      case 'left': return { left: 8, top: 0, bottom: 0, justifyContent: 'center' as const };
-      case 'right': return { right: 8, top: 0, bottom: 0, justifyContent: 'center' as const };
+      case 'left': return { left: inset, top: 0, bottom: 0, justifyContent: 'center' as const };
+      case 'right': return { right: inset, top: 0, bottom: 0, justifyContent: 'center' as const };
       default: return {};
     }
   };
@@ -106,9 +109,9 @@ export default function GameTable({ gameState, humanPlayerId }: GameTableProps) 
   });
 
   return (
-    <View style={styles.table}>
+    <View style={styles.table} testID="game-table">
       {/* Trick area — takes all space except the deck sidebar */}
-      <View style={[styles.trickArea, isRow && styles.trickAreaRow]}>
+      <View style={[styles.trickArea, isRow && styles.trickAreaRow]} testID="trick-area">
         {cards}
       </View>
 
@@ -183,7 +186,7 @@ const makeStyles = (m: CardMetrics) => StyleSheet.create({
     // surplus width, and piling all of it against the table edges reads as two
     // cards stuck together with wide empty margins.
     gap: m.trickGap,
-    paddingHorizontal: 8,
+    paddingHorizontal: CARD_METRICS_CHROME.playedInset,
     justifyContent: 'space-evenly',
   },
   playedCard: {

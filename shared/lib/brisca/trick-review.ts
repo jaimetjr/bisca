@@ -1,6 +1,7 @@
 import { Card, Player, Suit, TrickCard } from '../types';
 import { getCardPoints, determineTrickWinner } from './engine';
 import { sameTeam } from './coach';
+import { explainTrick } from './trick-explain';
 
 export interface TrickReview {
   reasonKey: string;
@@ -104,4 +105,42 @@ export function reviewTrick({
     return { reasonKey: 'review.goodWin', params: { points: pot }, tone: 'good' };
   }
   return null;
+}
+
+/** A message for the practice-mode coach banner. */
+export interface CoachLesson {
+  key: string;
+  params?: Record<string, string | number>;
+  tone: 'warn' | 'good' | 'info';
+}
+
+/**
+ * The single message the coach banner shows once a trick is finished: what the
+ * player's own move cost or earned if there is anything to say, and otherwise
+ * who took the trick and why.
+ *
+ * These were two separate things in `app/game.tsx`, and that is what made the
+ * banner flicker past: the review was held in state and lasted until the
+ * player's next card, while the recap was derived from `phase ===
+ * 'trickComplete'` and disappeared the moment the engine moved on — 1500ms at
+ * normal speed and 750ms at fast. `reviewTrick` deliberately stays quiet on most
+ * tricks, so the short-lived branch was the one the player saw most often.
+ *
+ * Producing both from one call is what lets the screen hold one value with one
+ * lifetime. Order is the precedence: a lesson about your own move beats a recap
+ * of who won.
+ *
+ * Pure — does not mutate its inputs.
+ */
+export function lessonForTrick(input: TrickReviewInput): CoachLesson | null {
+  const review = reviewTrick(input);
+  if (review) return { key: review.reasonKey, params: review.params, tone: review.tone };
+
+  const info = explainTrick(input.trick, input.trumpSuit, input.players);
+  if (!info) return null;
+  return {
+    key: info.reasonKey,
+    params: { winner: info.winnerName, points: info.points },
+    tone: 'info',
+  };
 }

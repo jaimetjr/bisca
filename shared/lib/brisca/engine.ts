@@ -2,8 +2,17 @@ import { Card, GameState, Player, TrickCard, Suit, AIDifficulty, CARD_POINTS, CA
 import { createDeck, shuffleDeck, dealCards } from './deck';
 import { GAME_WIN_SCORE } from '../../constants/game';
 
-export function createGameState(playerConfigs: { id: string; name: string; isAI: boolean; difficulty?: AIDifficulty; team?: number }[]): GameState {
-  const deck = shuffleDeck(createDeck());
+/**
+ * A fresh game. `rng` is only for tests that need the *deal* reproducible —
+ * seeding the AI alone is not enough, because the cards it is dealt move the
+ * result far more than its own random draws do. Production omits it and gets
+ * `Math.random`.
+ */
+export function createGameState(
+  playerConfigs: { id: string; name: string; isAI: boolean; difficulty?: AIDifficulty; team?: number }[],
+  rng?: () => number,
+): GameState {
+  const deck = shuffleDeck(createDeck(), rng);
   const cardsPerPlayer = 3;
   let remaining = deck;
   const players: Player[] = [];

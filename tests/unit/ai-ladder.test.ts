@@ -13,11 +13,18 @@ import type { AIDifficulty, Card, GameState } from '../../shared/lib/types';
  *
  * The wall-clock cutoff is disabled (nowMs is frozen at 0), so each difficulty
  * runs its true intrinsic config — simulations, maxTrickDepth and epsilon from
- * AI_SEARCH_CONFIG — to completion. That makes the whole thing deterministic
- * and machine-independent: it measures the strength baked into the presets,
- * not how fast the test host happens to be, so it cannot flake. On a real
- * device the differing time budgets (easy 15ms → hard 120ms) only widen these
- * gaps further, never narrow them.
+ * AI_SEARCH_CONFIG — to completion. That makes it machine-independent: it
+ * measures the strength baked into the presets, not how fast the test host
+ * happens to be. On a real device the differing time budgets (easy 15ms → hard
+ * 120ms) only widen these gaps further, never narrow them.
+ *
+ * Determinism needs *both* halves seeded, and for a while only one was. The AI's
+ * own draws came from `mulberry32`, but every game was dealt by
+ * `createGameState` straight out of `Math.random`, so the win rates below moved
+ * from run to run and the widest-margin comparison failed about one run in
+ * three — on numbers that were never wrong, just resampled. The deal is seeded
+ * now, and the cards matter far more to a result than the AI's own sampling
+ * does, which is why seeding half of it was worth nothing.
  */
 
 type Policy = (s: GameState, id: string) => Card | null;
@@ -26,11 +33,13 @@ function policy(diff: AIDifficulty, rng: () => number): Policy {
   return (s, id) => chooseAICard(s, id, diff, { nowMs: () => 0, rng });
 }
 
-function playGame(seat0: Policy, seat1: Policy): [number, number] {
+function playGame(seat0: Policy, seat1: Policy, rng: () => number): [number, number] {
+  // The deal is seeded too. Seeding only the AI left every game dealt from
+  // `Math.random`, which moved these margins run to run — see the note above.
   let state = createGameState([
     { id: 'p0', name: 'P0', isAI: true },
     { id: 'p1', name: 'P1', isAI: true },
-  ]);
+  ], rng);
   const policies = [seat0, seat1];
   let guard = 0;
   while (state.phase !== 'gameOver' && guard++ < 300) {
@@ -65,7 +74,7 @@ function duel(strong: AIDifficulty, weak: AIDifficulty, games: number): Duel {
 
   for (let g = 0; g < games; g++) {
     const strongFirst = g % 2 === 0;
-    const [s0, s1] = strongFirst ? playGame(sp, wp) : playGame(wp, sp);
+    const [s0, s1] = strongFirst ? playGame(sp, wp, rng) : playGame(wp, sp, rng);
     const strongScore = strongFirst ? s0 : s1;
     const weakScore = strongFirst ? s1 : s0;
     diff += strongScore - weakScore;

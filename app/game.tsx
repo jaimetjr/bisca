@@ -25,8 +25,7 @@ import { createGameState, playCard, completeTrick } from '@/shared/lib/brisca/en
 import { GameState, Card, AIDifficulty } from '@/shared/lib/types';
 import { chooseAICard } from '@/shared/lib/brisca/ai';
 import { suggestPlay } from '@/shared/lib/brisca/coach';
-import { explainTrick } from '@/shared/lib/brisca/trick-explain';
-import { reviewTrick, TrickReview } from '@/shared/lib/brisca/trick-review';
+import { lessonForTrick, CoachLesson } from '@/shared/lib/brisca/trick-review';
 import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { wsErrorText } from '@/shared/lib/api-errors';
 import { getAppVersion } from '@/shared/lib/app-version';
@@ -39,12 +38,34 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
 import { useInterstitialAd } from '@shared/hooks/useInterstitialAd';
 import { CardMetricsProvider, useComputedCardMetrics } from '@shared/hooks/useCardMetrics';
+import {
+  nextTableCorrection,
+  COACH_BANNER_LINE_HEIGHT,
+  COACH_BANNER_MARGIN,
+} from '@shared/lib/brisca/card-metrics';
 
 const AI_NAMES = ['Carlos', 'Maria', 'Pedro'];
 const HUMAN_ID = 'human';
-/** Ceiling on the measured correction fed back into the table's height. */
-const MAX_MEASURED_TABLE_GAIN = 240;
 const MAX_RECONNECT_ATTEMPTS = 3;
+/**
+ * The your-turn glow around the hand, per side. Always drawn, transparent when
+ * unlit — see `CHROME.handPadding`, which has always counted it as present.
+ */
+const HAND_GLOW_BORDER = 2;
+
+/** Icon and colour per kind of coach message. `hint` is the only one the banner adds. */
+const COACH_TONE = {
+  hint: { icon: 'lightbulb-on' as const, color: Colors.success },
+  good: { icon: 'thumb-up-outline' as const, color: Colors.success },
+  warn: { icon: 'alert-circle-outline' as const, color: Colors.gold },
+  info: { icon: 'cards-playing-outline' as const, color: Colors.textSecondary },
+};
+
+interface CoachBannerMessage {
+  key: string;
+  params?: Record<string, string | number>;
+  tone: keyof typeof COACH_TONE;
+}
 
 function DealAnimatedCard({ children, index, isNew }: { children: React.ReactNode; index: number; isNew: boolean }) {
   const animRef = useRef(new Animated.Value(isNew ? 0 : 1)).current;
@@ -120,11 +141,17 @@ export default function GameScreen() {
   // How-to-Play modal from inside the game.
   const [hintedCardId, setHintedCardId] = useState<string | null>(null);
   const [hintReason, setHintReason] = useState<{ key: string; params?: Record<string, number> } | null>(null);
-  // The lesson from the trick just finished. Held in state rather than derived
-  // from `phase === 'trickComplete'` so it survives past the 750ms the trick is
-  // on screen at fast speed — it stays until the player's next move, which is
-  // the only way there's time to read it.
-  const [trickReview, setTrickReview] = useState<TrickReview | null>(null);
+  // The lesson from the trick just finished — what your move cost or earned if
+  // there is anything to say, and otherwise who took the trick and why. Held in
+  // state rather than derived from `phase === 'trickComplete'` so it survives
+  // past the 750ms the trick is on screen at fast speed; it stays until the
+  // player's next move, which is the only way there's time to read it.
+  //
+  // Both halves come from one call for exactly that reason. They used to be two
+  // values — this one in state, the "who won" recap derived from the phase — and
+  // since `reviewTrick` stays quiet on most tricks by design, the derived one was
+  // what the player saw most and it vanished with the phase.
+  const [trickLesson, setTrickLesson] = useState<CoachLesson | null>(null);
   const handBeforePlayRef = useRef<Card[]>([]);
   const [tutorialVisible, setTutorialVisible] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -316,7 +343,7 @@ export default function GameScreen() {
   // per trick, on the transition into `trickComplete`.
   useEffect(() => {
     if (!isPractice || gameState?.phase !== 'trickComplete') return;
-    setTrickReview(reviewTrick({
+    setTrickLesson(lessonForTrick({
       trick: gameState.currentTrick,
       trumpSuit: gameState.trumpSuit,
       players: gameState.players,
@@ -405,7 +432,7 @@ export default function GameScreen() {
 
     setHintedCardId(null);
     setHintReason(null);
-    setTrickReview(null);
+    setTrickLesson(null);
 
     if (isPractice) {
       // Snapshot the hand *before* the engine removes the card: reviewing the
@@ -447,30 +474,14 @@ export default function GameScreen() {
 
   const opponents = gameState.players.filter(p => p.id !== myId);
   const teamMode = humanPlayer.team !== undefined;
-  const trickInfo = isPractice && gameState.phase === 'trickComplete'
-    ? explainTrick(gameState.currentTrick, gameState.trumpSuit, gameState.players)
-    : null;
 
-  // Banner precedence: what to do now beats what just happened, and a lesson
-  // about the player's own move beats a recap of who won.
-  const coachMessage = hintReason
-    ? { key: hintReason.key, params: hintReason.params, tone: 'hint' as const }
-    : trickReview
-      ? { key: trickReview.reasonKey, params: trickReview.params, tone: trickReview.tone }
-      : trickInfo
-        ? {
-            key: trickInfo.reasonKey,
-            params: { winner: trickInfo.winnerName, points: trickInfo.points },
-            tone: 'info' as const,
-          }
-        : null;
+  // Banner precedence: what to do now beats what just happened. Everything about
+  // the finished trick is already resolved into one value with one lifetime —
+  // see `trickLesson`.
+  const coachMessage: CoachBannerMessage | null = hintReason
+    ? { key: hintReason.key, params: hintReason.params, tone: 'hint' }
+    : trickLesson;
 
-  const COACH_TONE = {
-    hint: { icon: 'lightbulb-on' as const, color: Colors.success },
-    good: { icon: 'thumb-up-outline' as const, color: Colors.success },
-    warn: { icon: 'alert-circle-outline' as const, color: Colors.gold },
-    info: { icon: 'cards-playing-outline' as const, color: Colors.textSecondary },
-  };
   return (
     <CardMetricsProvider value={cardMetrics}>
     <View style={[styles.container, { paddingTop: topPadding + 8, paddingBottom: bottomPadding + 8 }]}>
@@ -533,25 +544,43 @@ export default function GameScreen() {
         )}
       </View>
 
-      {isPractice && coachMessage && (
+      {/* The slot is on screen for the whole of practice mode, message or not.
+          `card-metrics` reserves its height permanently so the table does not
+          resize when a hint appears mid-turn — and that reservation only holds
+          if the space is really occupied. Rendering it only when there was
+          something to say left the first trick with 41dp of table that nothing
+          was using; the measurement loop took it, the banner then arrived and
+          took it back, and the played cards were left sized for a table taller
+          than the one that clips them. */}
+      {isPractice && (
         <View
           style={[
             styles.coachBanner,
-            {
-              borderColor: `${COACH_TONE[coachMessage.tone].color}80`,
-              backgroundColor: `${COACH_TONE[coachMessage.tone].color}22`,
-            },
+            { height: cardMetrics.coachBanner.height },
+            coachMessage
+              ? {
+                  borderColor: `${COACH_TONE[coachMessage.tone].color}80`,
+                  backgroundColor: `${COACH_TONE[coachMessage.tone].color}22`,
+                }
+              : styles.coachBannerEmpty,
           ]}
           testID="coach-banner"
         >
-          <MaterialCommunityIcons
-            name={COACH_TONE[coachMessage.tone].icon}
-            size={16}
-            color={COACH_TONE[coachMessage.tone].color}
-          />
-          <Text style={styles.coachBannerText}>
-            {t(coachMessage.key, coachMessage.params as Record<string, string | number>)}
-          </Text>
+          {coachMessage && (
+            <>
+              <MaterialCommunityIcons
+                name={COACH_TONE[coachMessage.tone].icon}
+                size={16}
+                color={COACH_TONE[coachMessage.tone].color}
+              />
+              {/* Clamped to the lines the box was built for. The longest
+                  strings wrap to three on a narrow phone, and a banner that
+                  grows is a table that shrinks under the player mid-lesson. */}
+              <Text style={styles.coachBannerText} numberOfLines={cardMetrics.coachBanner.lines}>
+                {t(coachMessage.key, coachMessage.params as Record<string, string | number>)}
+              </Text>
+            </>
+          )}
         </View>
       )}
 
@@ -568,18 +597,17 @@ export default function GameScreen() {
 
       {/* The table takes the whole remainder, and then reports how much that
           actually was. Every other height here is modelled from constants, and
-          on a real device the model can be pessimistic by tens of dp — which
-          showed up as felt the cards were not allowed to use. Feeding the
+          on a real device the model can be off by tens of dp in either
+          direction — too little and the cards are denied felt they could use,
+          too much and they are drawn past a border that clips them. Feeding the
           difference back sizes them from the real box; it settles in one pass,
           because once the metrics know the true height the difference is zero.
-          Bounded so a device that somehow never settles cannot run away. */}
+          See `nextTableCorrection` for why it has to correct downward too. */}
       <View
         style={styles.tableContainer}
         onLayout={(e) => {
           const real = Math.round(e.nativeEvent.layout.height);
-          const missed = real - cardMetrics.tableMaxHeight;
-          if (missed < 4) return;
-          setExtraTableHeight(prev => Math.min(prev + missed, MAX_MEASURED_TABLE_GAIN));
+          setExtraTableHeight(prev => nextTableCorrection(prev, real, cardMetrics.tableMaxHeight));
         }}
       >
         <GameTable gameState={gameState} humanPlayerId={myId} />
@@ -588,8 +616,14 @@ export default function GameScreen() {
       <Animated.View style={[
         styles.handContainer,
         {
-          borderWidth: handGlowAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 2] }),
-          borderColor: Colors.gold,
+          // Width fixed, colour animated. Animating the width made the hand
+          // container 4dp taller on your turn, which came straight out of the
+          // table below it and resized the played cards every turn.
+          borderWidth: HAND_GLOW_BORDER,
+          borderColor: handGlowAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['rgba(212, 168, 67, 0)', 'rgba(212, 168, 67, 1)'],
+          }),
           borderRadius: 14,
           shadowColor: Colors.gold,
           shadowOpacity: handGlowAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.7] }),
@@ -760,6 +794,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   coachBanner: {
+    // The height is set inline from `cardMetrics.coachBanner`: `card-metrics`
+    // reserves that exact number out of the table, and a box that sized itself
+    // to whatever the current lesson happened to be would make the reservation
+    // a fiction. Padding and border here have to match what it assumes.
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -767,13 +805,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(46, 125, 50, 0.5)',
     paddingHorizontal: 12,
-    paddingVertical: 8,
     borderRadius: 10,
-    marginBottom: 8,
+    marginBottom: COACH_BANNER_MARGIN,
+  },
+  /** Holds the reserved height without drawing anything, between lessons. */
+  coachBannerEmpty: {
+    backgroundColor: 'transparent',
+    borderColor: 'transparent',
   },
   coachBannerText: {
     color: Colors.white,
     fontSize: 13,
+    // Explicit so the reserved height is arithmetic and not a guess at what the
+    // platform does with Inter at 13px.
+    lineHeight: COACH_BANNER_LINE_HEIGHT,
     fontFamily: 'Inter_500Medium',
     flex: 1,
   },

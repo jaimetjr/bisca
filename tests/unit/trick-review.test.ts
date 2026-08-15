@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reviewTrick } from '../../shared/lib/brisca/trick-review';
+import { reviewTrick, lessonForTrick } from '../../shared/lib/brisca/trick-review';
 import type { Card, Player, Rank, Suit, TrickCard } from '../../shared/lib/types';
 
 const card = (suit: Suit, rank: Rank): Card => ({ suit, rank, id: `${suit}-${rank}` });
@@ -152,5 +152,71 @@ describe('reviewTrick', () => {
   it('devolve null para vaza vazia ou sem a sua carta', () => {
     expect(review([], [])).toBeNull();
     expect(review([{ playerId: 'ai-1', card: card('copas', 1) }], [])).toBeNull();
+  });
+});
+
+/**
+ * The one message the practice banner shows after a trick.
+ *
+ * These used to be two separate things in `app/game.tsx`: the review lived in
+ * React state and survived until the player's next card, while the "who won"
+ * recap was derived from `phase === 'trickComplete'` and died with it — 1500ms,
+ * or 750ms on fast speed. `reviewTrick` returns null on most tricks by design,
+ * so the short-lived one was the one the player saw most, and it flashed past.
+ * One function, one message, one lifetime.
+ */
+describe('lessonForTrick', () => {
+  const lesson = (trick: TrickCard[], handBeforePlay: Card[], players: Player[] = PLAYERS) =>
+    lessonForTrick({ trick, trumpSuit: 'oros', players, playerId: 'me', handBeforePlay });
+
+  it('prefere a lição sobre a sua jogada ao resumo de quem ganhou', () => {
+    const l = lesson(
+      [
+        { playerId: 'me', card: card('copas', 1) },
+        { playerId: 'ai-1', card: card('oros', 4) },
+      ],
+      [card('copas', 1), card('bastos', 5)],
+    );
+    expect(l?.key).toBe('review.gaveAwayPoints');
+    expect(l?.tone).toBe('warn');
+  });
+
+  it('cai no resumo da vaza quando não há lição sobre a sua jogada', () => {
+    // Won a cheap trick with no trump wasted: `reviewTrick` stays quiet on
+    // purpose, and the banner falls back to who took it and why. This is the
+    // majority case, and it is the one that used to vanish in 1500ms.
+    const trick: TrickCard[] = [
+      { playerId: 'ai-1', card: card('copas', 6) },
+      { playerId: 'me', card: card('copas', 7) },
+    ];
+    expect(review(trick, [card('copas', 7)])).toBeNull();
+
+    const l = lesson(trick, [card('copas', 7)]);
+    expect(l).not.toBeNull();
+    expect(l?.key).toBe('trickExplain.highestWinsNoPoints');
+    expect(l?.tone).toBe('info');
+    expect(l?.params?.winner).toBe('You');
+  });
+
+  it('nomeia o vencedor e os pontos no resumo', () => {
+    // Lost to the Ace of trump holding only a Jack (2 pts): not cheap enough for
+    // `review.lostCheap`, not expensive enough for `review.gaveAwayPoints`, and
+    // nothing in hand that would have taken it. `reviewTrick` says nothing, so
+    // the recap has to carry the trick — and has to stay up long enough to read.
+    const trick: TrickCard[] = [
+      { playerId: 'ai-1', card: card('oros', 1) },
+      { playerId: 'me', card: card('copas', 10) },
+    ];
+    expect(review(trick, [card('copas', 10)])).toBeNull();
+
+    const l = lesson(trick, [card('copas', 10)]);
+    expect(l?.key).toBe('trickExplain.highestWins');
+    expect(l?.tone).toBe('info');
+    expect(l?.params?.winner).toBe('Carlos');
+    expect(l?.params?.points).toBe(13);
+  });
+
+  it('devolve null quando não há vaza', () => {
+    expect(lesson([], [])).toBeNull();
   });
 });

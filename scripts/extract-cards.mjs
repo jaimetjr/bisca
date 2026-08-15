@@ -18,7 +18,14 @@
  * that the deck no longer fit in the decoded-bitmap cache and cards were being
  * re-decoded as they were dealt.
  *
- * Usage: node scripts/extract-cards.mjs && node scripts/webp-cards.mjs
+ * The extraction is faithful to the sheets, and the sheets have one gap: the Rey
+ * de Copas is drawn with no cup anywhere on it, alone in the deck in not showing
+ * its suit. `fix-rey-copas.mjs` puts one there afterwards, so it is part of the
+ * pipeline rather than a manual touch-up — skip it and the deck ships with a
+ * card whose suit cannot be read.
+ *
+ * Usage:
+ *   node scripts/extract-cards.mjs  *     && node scripts/webp-cards.mjs  *     && node scripts/fix-rey-copas.mjs
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';

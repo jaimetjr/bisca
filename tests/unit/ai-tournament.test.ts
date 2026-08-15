@@ -31,12 +31,18 @@ function heuristicPolicy(rng: () => number): Policy {
   return (state, playerId) => chooseHeuristicCard(state, playerId, 'hard', { rng });
 }
 
-/** Play one full game to completion and return each seat's final score. */
-function playGame(policies: [Policy, Policy]): [number, number] {
+/**
+ * Play one full game to completion and return each seat's final score.
+ *
+ * The deal is seeded along with the policies. Seeding only the policies left the
+ * cards coming from `Math.random`, so the win rate this test thresholds moved
+ * run to run — the same hole that had `ai-ladder` failing about one run in three.
+ */
+function playGame(policies: [Policy, Policy], rng: () => number): [number, number] {
   let state = createGameState([
     { id: 'p0', name: 'P0', isAI: true },
     { id: 'p1', name: 'P1', isAI: true },
-  ]);
+  ], rng);
 
   let guard = 0;
   while (state.phase !== 'gameOver' && guard++ < 200) {
@@ -74,7 +80,7 @@ describe('PIMC search vs legacy heuristic', () => {
       const policies: [Policy, Policy] =
         searchSeat === 0 ? [search, heuristic] : [heuristic, search];
 
-      const scores = playGame(policies);
+      const scores = playGame(policies, rng);
       const searchScore = scores[searchSeat];
       const heuristicScore = scores[1 - searchSeat];
 

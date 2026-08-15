@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   computeCardMetrics,
   columnHeight,
+  nextTableCorrection,
   CARD_ASPECT,
   CARD_METRICS_CHROME as CHROME,
+  COMFORTABLE_TABLE_CARD,
 } from '../../shared/lib/brisca/card-metrics';
 
 /**
@@ -80,9 +82,12 @@ describe('computeCardMetrics', () => {
         // Overlapping is a rescue for shallow phone tables. With room to spare,
         // the cards are laid out clear of each other — and "clear" has to mean a
         // gap you can see: dividing the table height by two flat is what left a
-        // tablet's played cards touching edge to edge.
+        // tablet's played cards touching edge to edge. The threshold is read
+        // from the source rather than repeated here; hardcoding it meant raising
+        // the real one silently moved devices across a line this still guarded
+        // at the old value.
         const clearFit = (m.tableMaxHeight - edges - m.trickGap) / 2 / CARD_ASPECT;
-        if (clearFit >= 75) {
+        if (clearFit >= COMFORTABLE_TABLE_CARD) {
           expect(stacked + m.trickGap, 'as cartas se encostaram')
             .toBeLessThanOrEqual(m.tableMaxHeight);
         }
@@ -187,11 +192,24 @@ describe('computeCardMetrics', () => {
     // cards in one column while a 2v2 grid uses two. Scaling it off the hand card
     // instead ignored that and inflated the 2v2 sidebar to compete with four
     // played cards.
+    //
+    // Strictly bigger only while there is room left to grow into. Once
+    // `MIN_DECK_RATIO` rose to 0.70 the floor alone reached the sidebar's height
+    // cap on a 375x620, so both modes hand back the same number — the trump at
+    // its maximum, which is what this is asking for, arrived at from the other
+    // side. Demanding `>` there would have forbidden the best available outcome.
+    const heightCap = (m: ReturnType<typeof computeCardMetrics>) =>
+      Math.floor((m.tableMaxHeight - CHROME.deckSidebarChrome) / 2 / CARD_ASPECT);
+
     for (const { name, width, height } of DEVICES.filter(d => d.width < 700 && d.height > 568)) {
       const solo = computeCardMetrics({ width, height, playerCount: 2 });
       const teams = computeCardMetrics({ width, height, playerCount: 4 });
-      expect(solo.deck.width, `${name}: trunfo não aproveitou a mesa vazia do 1v1`)
-        .toBeGreaterThan(teams.deck.width);
+      expect(solo.deck.width, `${name}: trunfo menor no 1v1 que no 2v2`)
+        .toBeGreaterThanOrEqual(teams.deck.width);
+      if (solo.deck.width < heightCap(solo)) {
+        expect(solo.deck.width, `${name}: trunfo não aproveitou a mesa vazia do 1v1`)
+          .toBeGreaterThan(teams.deck.width);
+      }
     }
   });
 
@@ -339,5 +357,123 @@ describe('computeCardMetrics', () => {
     const tightPractice = computeCardMetrics({ width: 360, height: 568, reserveCoachBanner: true });
     expect(tightPractice.large.width).toBeGreaterThan(tight.large.width * 0.9);
     expect(tightPractice.large.width).toBeGreaterThanOrEqual(84);
+  });
+});
+
+/**
+ * The measured correction GameScreen feeds back through `extraTableHeight`.
+ *
+ * The model is only ever an estimate of what `tableContainer` (flex: 1) really
+ * gets, so GameScreen measures the box and reports the difference. Everything
+ * below is about that loop settling on the truth — in practice mode it did not,
+ * and the played cards were sized for a table 41dp taller than the one they
+ * were drawn into. `GameTable.table` clips its overflow, so the bottom card
+ * came out shaved off at the gold border.
+ */
+describe('nextTableCorrection', () => {
+  /**
+   * Height the column really leaves for the table, modelled the same way
+   * `computeCardMetrics` models it — except the coach banner is counted only
+   * when GameScreen actually renders one. That gap between "reserved" and
+   * "rendered" is the whole bug.
+   */
+  const realTableHeight = (
+    height: number,
+    m: ReturnType<typeof computeCardMetrics>,
+    bannerRendered: boolean,
+  ) =>
+    height -
+    CHROME.screenVertical -
+    CHROME.topBar -
+    (bannerRendered ? m.coachBanner.reserved : 0) -
+    (m.small.height + CHROME.opponentChrome) -
+    (CHROME.handLabel + m.large.height + CHROME.handPadding) -
+    CHROME.tableMargin;
+
+  /** Runs the measure/re-render loop to a fixed point, as a device would. */
+  const settle = (
+    width: number,
+    height: number,
+    bannerRendered: boolean,
+    startFrom = 0,
+  ) => {
+    let extra = startFrom;
+    let m = computeCardMetrics({ width, height, reserveCoachBanner: true, extraTableHeight: extra });
+    for (let i = 0; i < 10; i++) {
+      const next = nextTableCorrection(extra, realTableHeight(height, m, bannerRendered), m.tableMaxHeight);
+      if (next === extra) break;
+      extra = next;
+      m = computeCardMetrics({ width, height, reserveCoachBanner: true, extraTableHeight: extra });
+    }
+    return { extra, metrics: m, real: realTableHeight(height, m, bannerRendered) };
+  };
+
+  it('devolve o que tomou quando o banner aparece', () => {
+    // The sequence that ships: practice mode opens with no message, so the
+    // reserved banner space is briefly free and the loop claims it. The first
+    // trick then puts a message on screen and the space is gone again.
+    for (const { name, width, height } of DEVICES.filter(d => d.width < 700)) {
+      const withoutBanner = settle(width, height, false);
+      const withBanner = settle(width, height, true, withoutBanner.extra);
+
+      // The correction has to come back down, not stay at what it grabbed.
+      expect(withBanner.extra, `${name}: correção não voltou`)
+        .toBeLessThan(withoutBanner.extra + 4);
+      expect(withBanner.metrics.tableMaxHeight, `${name}: mesa maior que a real`)
+        .toBeLessThanOrEqual(withBanner.real);
+    }
+  });
+
+  it('a vaza nunca passa da mesa que a coluna realmente deu', () => {
+    // The visible symptom: `GameTable.table` has overflow: 'hidden', so a stack
+    // taller than the real box is a card cut off at the border rather than a
+    // layout warning.
+    for (const { name, width, height } of DEVICES.filter(d => d.width < 700)) {
+      const opened = settle(width, height, false);
+      for (const [tag, state] of [
+        ['sem banner', opened],
+        ['com banner', settle(width, height, true, opened.extra)],
+      ] as const) {
+        const inner = state.real - CHROME.tableBorder - 2 * CHROME.playedInset;
+        const stacked = 2 * state.metrics.medium.height;
+        const overlap = Math.max(0, stacked - inner);
+        expect(overlap, `${name} (${tag}): sobrepôs mais de 30%`)
+          .toBeLessThanOrEqual(state.metrics.medium.height * 0.3);
+      }
+    }
+  });
+
+  it('o banner reservado é exatamente a caixa que a tela desenha', () => {
+    // GameScreen renders `coachBanner.height` and the column subtracts
+    // `coachBanner.reserved`. The two drifting apart is the whole failure mode
+    // this file keeps re-learning, so it is an assertion and not a comment.
+    for (const { name, width, height } of DEVICES) {
+      const { coachBanner: b } = computeCardMetrics({ width, height, reserveCoachBanner: true });
+      expect(b.reserved, `${name}: reserva não bate com a caixa`)
+        .toBe(b.height + CHROME.coachBannerMargin);
+      // padding 8 and border 1 per side, matching `styles.coachBanner`.
+      expect(b.height, `${name}: caixa não bate com as linhas`)
+        .toBe(b.lines * 17 + 2 * 8 + 2 * 1);
+    }
+  });
+
+  it('duas linhas onde cabe, uma onde não cabe', () => {
+    // The longest coach/review strings run to ~103 characters — two lines on any
+    // phone — so one line means an ellipsis mid-lesson. It is still the right
+    // answer on a 5" phone with a nav bar: at two lines the column comes out
+    // over the screen with the table and the hand already at their floors.
+    expect(computeCardMetrics({ width: 360, height: 568 }).coachBanner.lines).toBe(1);
+    for (const { name, width, height } of DEVICES.filter(d => d.height > 568)) {
+      expect(computeCardMetrics({ width, height }).coachBanner.lines, name).toBe(2);
+    }
+  });
+
+  it('ignora ruído de medição e respeita o teto', () => {
+    expect(nextTableCorrection(0, 300, 298), 'ruído de 2dp virou correção').toBe(0);
+    expect(nextTableCorrection(0, 298, 300), 'ruído de -2dp virou correção').toBe(0);
+    expect(nextTableCorrection(10, 350, 300)).toBe(60);
+    expect(nextTableCorrection(10, 250, 300)).toBe(-40);
+    expect(nextTableCorrection(0, 5000, 300), 'sem teto para cima').toBe(240);
+    expect(nextTableCorrection(0, 0, 5000), 'sem teto para baixo').toBe(-240);
   });
 });
