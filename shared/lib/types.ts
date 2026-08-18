@@ -17,6 +17,13 @@ export interface Player {
   isAI: boolean;
   difficulty?: AIDifficulty;
   team?: number;
+  /**
+   * Which opponent persona this bot is, resolved through
+   * `toPersona` in shared/lib/brisca/opponents.ts. Optional because online
+   * players have none — carrying it on the Player is what lets both the AI move
+   * and the seat's avatar read it without threading extra props.
+   */
+  personaId?: string;
 }
 
 export interface TrickCard {

@@ -5,6 +5,7 @@ import Colors from '@/shared/constants/colors';
 import { Player } from '@/shared/lib//types';
 import CardSprite from '@/components/CardSprite';
 import { useCardMetrics } from '@shared/hooks/useCardMetrics';
+import { toPersona } from '@shared/lib/brisca/opponents';
 
 interface OpponentHandProps {
   player: Player;
@@ -14,6 +15,18 @@ interface OpponentHandProps {
 
 export default function OpponentHand({ player, isCurrentTurn, isTeammate }: OpponentHandProps) {
   const metrics = useCardMetrics();
+  // Offline bots carry a persona and get its own face; online players never do
+  // and keep the generic icons this had before.
+  const persona = toPersona(player.personaId);
+
+  const icon = persona?.icon ?? (isTeammate ? 'shield-account' : (player.isAI ? 'robot' : 'account'));
+  // The turn colour still wins: knowing whose turn it is matters more than
+  // knowing who they are, and the teammate green is a team cue, not an identity.
+  const iconColor = isCurrentTurn
+    ? Colors.gold
+    : isTeammate
+      ? '#4CAF50'
+      : persona?.color ?? Colors.textSecondary;
 
   return (
     <View style={styles.container}>
@@ -23,9 +36,9 @@ export default function OpponentHand({ player, isCurrentTurn, isTeammate }: Oppo
         isTeammate && styles.teammateNameTag,
       ]}>
         <MaterialCommunityIcons
-          name={isTeammate ? 'shield-account' : (player.isAI ? 'robot' : 'account')}
+          name={icon as any}
           size={14}
-          color={isCurrentTurn ? Colors.gold : isTeammate ? '#4CAF50' : Colors.textSecondary}
+          color={iconColor}
         />
         <Text style={[
           styles.name,

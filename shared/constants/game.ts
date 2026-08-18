@@ -4,6 +4,14 @@ export const AI_DELAY_MIN_MS = 600;
 export const AI_DELAY_MAX_MS = 400; // added to min, so range is [600, 1000]
 export const DEAL_ANIMATION_DURATION_MS = 350;
 export const DEAL_ANIMATION_STAGGER_MS = 120;
+/**
+ * How long the whole deal-in takes: the last of the three cards starts after
+ * two staggers and then runs its full duration. Used to hold the first AI move
+ * until the deal has visibly finished — before the starting seat was random the
+ * AI never led, so its 600ms delay always landed well clear of the animation.
+ */
+export const DEAL_ANIMATION_TOTAL_MS =
+  DEAL_ANIMATION_DURATION_MS + 2 * DEAL_ANIMATION_STAGGER_MS;
 export const CONNECTION_TIMEOUT_MS = 10_000;
 export const ROOM_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 export const AFK_TIMEOUT_MS = 120_000;         // 2 minutes — configurable
@@ -51,6 +59,37 @@ export const AI_SEARCH_CONFIG = {
 // Cutoff evaluation: weight on hand potential relative to captured points.
 // Deliberately well under 1 so real captured points dominate speculation.
 export const AI_HAND_POTENTIAL_WEIGHT = 0.5;
+
+/**
+ * The dials that decide what a bot *wants*, as opposed to how well it computes.
+ *
+ * Difficulty (AI_SEARCH_CONFIG above) owns strength — how deep it looks and how
+ * often it deliberately errs. These own taste, and are what give each opponent
+ * persona in shared/lib/brisca/opponents.ts a recognisable style at unchanged
+ * strength. They live here rather than in the persona catalog so ai-search.ts
+ * never has to import the catalog.
+ */
+/**
+ * Only two dials, on purpose. The evaluation has a third term — credit for the
+ * unfinished trick — and it was tried here first; it moved measured play by
+ * about 1%, because the search looks far enough ahead that the trick resolves
+ * into real captured points and the heuristic stops mattering. A dial that
+ * cannot change the card chosen is a style label with nothing behind it, so it
+ * is not offered. The same goes for CONTESTED_TRICK_POINTS in ai-search.ts,
+ * which only orders moves for alpha-beta.
+ */
+export interface EvalWeights {
+  /** What a trump that is still master is worth in future capture. */
+  trumpControlBonus: number;
+  /** Weight on hand potential relative to points already captured. */
+  handPotentialWeight: number;
+}
+
+/** The engine's long-standing values — the style-neutral baseline. */
+export const NEUTRAL_WEIGHTS: EvalWeights = {
+  trumpControlBonus: 4,
+  handPotentialWeight: AI_HAND_POTENTIAL_WEIGHT,
+};
 
 // Game speed multipliers applied to TRICK_DISPLAY_MS
 export const GAME_SPEED_MULTIPLIER = {

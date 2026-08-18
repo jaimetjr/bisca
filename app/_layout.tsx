@@ -17,6 +17,7 @@ import { queryClient } from '@/shared/query-client';
 import { EntitlementProvider } from '@shared/hooks/useEntitlement';
 import { RewardsProvider } from '@shared/hooks/useRewards';
 import { consumePendingInvite } from '@/shared/lib/pending-invite';
+import { consumePendingAuthMode } from '@/shared/lib/auth-nav-intent';
 import { ALL_CARD_ASSETS } from '@/components/CardSprite';
 
 // Crash/error reporting. The DSN is a public identifier (safe to embed) and is
@@ -82,7 +83,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     // Unauthenticated, non-guest user outside auth screens → go to login
     if (!isSignedIn && !isGuest && !inAuthGroup) {
-      router.replace('/(auth)/login');
+      const mode = consumePendingAuthMode();
+      router.replace(mode ? { pathname: '/(auth)/login', params: { mode } } : '/(auth)/login');
       return;
     }
 

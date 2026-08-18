@@ -9,7 +9,9 @@ import Colors from '@/shared/constants/colors';
 import { useContentPadding } from '@shared/hooks/useContentPadding';
 import { isOldEnoughToRegister, dobToISO, getLocaleDatePlaceholder, formatLocaleDate, isoToLocaleDate } from '@shared/lib/date';
 import { MIN_SIGNUP_AGE } from '@shared/constants/policy';
+import { useQueryClient } from '@tanstack/react-query';
 import { getApiUrl } from '@shared/query-client';
+import { cacheProfileName } from '@shared/hooks/useProfileName';
 import { validatePassword } from '@shared/lib/validation/password';
 import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
 import { t } from '@/shared/i18n';
@@ -17,7 +19,8 @@ import { useLanguage } from '@shared/hooks/useLanguage';
 import { friendlyApiError } from '@/shared/lib/api-errors';
 
 export default function ProfileScreen() {
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
+  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   useLanguage(); // subscribe to language changes so t() output updates
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
@@ -93,6 +96,13 @@ export default function ProfileScreen() {
         setErrorMsg(friendlyApiError(data));
         return;
       }
+      // The name is cached in two places that nothing else refreshes: the
+      // AsyncStorage copy the setup screen reads on launch, and the ['profile']
+      // query, which is `staleTime: Infinity` app-wide and so never refetches
+      // on its own. Skipping this left every room labelled with the old name.
+      if (userId) await cacheProfileName(userId, `${firstName.trim()} ${lastName.trim()}`);
+      void queryClient.invalidateQueries({ queryKey: ['profile'] });
+
       setDirty(false);
       Alert.alert(t('profile.savedTitle'), t('profile.savedBody'));
     } catch {
