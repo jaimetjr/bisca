@@ -37,6 +37,37 @@ async function startTwoPlayerGame() {
   return { hostWs, guestWs, hostId, guestId, hostStart, guestStart };
 }
 
+/**
+ * Who leads is drawn per game in server/game-rooms.ts, so a test needing the
+ * player whose turn it is — or one whose turn it is not — has to ask the state
+ * instead of assuming the host. Each player's own view carries their real
+ * (non-hidden) hand, so the hands come from their respective payloads.
+ */
+function seatsOf(game: Awaited<ReturnType<typeof startTwoPlayerGame>>) {
+  const state = game.hostStart.gameState as GameState;
+  const currentId = state.players[state.currentPlayerIndex].id;
+  const idleId = currentId === game.hostId ? game.guestId : game.hostId;
+
+  const wsById: Record<string, typeof game.hostWs> = {
+    [game.hostId]: game.hostWs,
+    [game.guestId]: game.guestWs,
+  };
+  const viewById: Record<string, GameState> = {
+    [game.hostId]: game.hostStart.gameState as GameState,
+    [game.guestId]: game.guestStart.gameState as GameState,
+  };
+  const handOf = (id: string) => viewById[id].players.find(p => p.id === id)!.hand;
+
+  return {
+    currentId,
+    idleId,
+    currentWs: wsById[currentId],
+    idleWs: wsById[idleId],
+    currentHand: handOf(currentId),
+    idleHand: handOf(idleId),
+  };
+}
+
 // ─── start_game validation ────────────────────────────────────────────────────
 
 describe('start_game', () => {
@@ -90,41 +121,40 @@ describe('start_game', () => {
 
 describe('play_card', () => {
   it('returns NOT_YOUR_TURN when the wrong player plays', async () => {
-    const { hostWs, guestWs, guestId, guestStart } = await startTwoPlayerGame();
+    const game = await startTwoPlayerGame();
+    const { idleWs, idleHand } = seatsOf(game);
 
-    // Current player is index 0 (host). Guest tries to play.
-    const state = guestStart.gameState as GameState;
-    const guestPlayer = state.players.find(p => p.id === guestId)!;
-
-    const errPromise = waitForMessage(guestWs, 'error') as Promise<Extract<ServerMessage, { type: 'error' }>>;
-    send(guestWs, { type: 'play_card', cardId: guestPlayer.hand[0].id });
+    const errPromise = waitForMessage(idleWs, 'error') as Promise<Extract<ServerMessage, { type: 'error' }>>;
+    send(idleWs, { type: 'play_card', cardId: idleHand[0].id });
     const err = await errPromise;
     expect(err.code).toBe('NOT_YOUR_TURN');
-    hostWs.close(); guestWs.close();
+    game.hostWs.close(); game.guestWs.close();
   });
 
   it('returns INVALID_CARD for a made-up card id', async () => {
-    const { hostWs, guestWs } = await startTwoPlayerGame();
-    const errPromise = waitForMessage(hostWs, 'error') as Promise<Extract<ServerMessage, { type: 'error' }>>;
-    send(hostWs, { type: 'play_card', cardId: 'fake-card-id' });
+    const game = await startTwoPlayerGame();
+    // Has to come from the player whose turn it is: the server checks the turn
+    // before it looks the card up, so the idle seat would get NOT_YOUR_TURN.
+    const { currentWs } = seatsOf(game);
+    const errPromise = waitForMessage(currentWs, 'error') as Promise<Extract<ServerMessage, { type: 'error' }>>;
+    send(currentWs, { type: 'play_card', cardId: 'fake-card-id' });
     const err = await errPromise;
     expect(err.code).toBe('INVALID_CARD');
-    hostWs.close(); guestWs.close();
+    game.hostWs.close(); game.guestWs.close();
   });
 
   it('valid play broadcasts game_update to all players', async () => {
-    const { hostWs, guestWs, hostId, hostStart } = await startTwoPlayerGame();
-    const state = hostStart.gameState as GameState;
-    const hostPlayer = state.players.find(p => p.id === hostId)!;
+    const game = await startTwoPlayerGame();
+    const { currentWs, currentHand } = seatsOf(game);
 
     const [hostUpdate, guestUpdate] = await Promise.all([
-      waitForMessage(hostWs, 'game_update'),
-      waitForMessage(guestWs, 'game_update'),
-      (async () => send(hostWs, { type: 'play_card', cardId: hostPlayer.hand[0].id }))(),
+      waitForMessage(game.hostWs, 'game_update'),
+      waitForMessage(game.guestWs, 'game_update'),
+      (async () => send(currentWs, { type: 'play_card', cardId: currentHand[0].id }))(),
     ]);
     expect(hostUpdate.type).toBe('game_update');
     expect(guestUpdate.type).toBe('game_update');
-    hostWs.close(); guestWs.close();
+    game.hostWs.close(); game.guestWs.close();
   });
 });
 

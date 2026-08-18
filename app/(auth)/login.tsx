@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform, ScrollView, KeyboardAvoidingView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '@/shared/constants/colors';
@@ -19,6 +19,7 @@ export default function LoginScreen() {
   const { signIn, signUp } = useAuth();
   const { enableGuestMode } = useGuestMode();
   const router = useRouter();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
   useLanguage(); // subscribe to language changes so t() output updates
 
   const [email, setEmail] = useState('');
@@ -26,7 +27,7 @@ export default function LoginScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(mode === 'signup');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 

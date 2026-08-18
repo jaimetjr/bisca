@@ -7,10 +7,27 @@ import { GAME_WIN_SCORE } from '../../constants/game';
  * seeding the AI alone is not enough, because the cards it is dealt move the
  * result far more than its own random draws do. Production omits it and gets
  * `Math.random`.
+ *
+ * `startingPlayerIndex` picks who leads the first trick, defaulting to seat 0.
+ * It never draws from `rng`, so a seeded deal is byte-identical whether or not
+ * it is supplied — tests/unit/ai-ladder.test.ts and ai-tournament.test.ts seed
+ * the deal and threshold win rates against it, and a stray draw here would
+ * shift every one of those deals. Choosing the seat randomly is deliberately
+ * left to callers (see `nextStarter`): the strength suites depend on seat 0
+ * leading so that alternating seats cancels the lead advantage, and the
+ * rematch rotation policy belongs to the screen, not to a pure engine.
  */
 export function createGameState(
-  playerConfigs: { id: string; name: string; isAI: boolean; difficulty?: AIDifficulty; team?: number }[],
+  playerConfigs: {
+    id: string;
+    name: string;
+    isAI: boolean;
+    difficulty?: AIDifficulty;
+    team?: number;
+    personaId?: string;
+  }[],
   rng?: () => number,
+  options?: { startingPlayerIndex?: number },
 ): GameState {
   const deck = shuffleDeck(createDeck(), rng);
   const cardsPerPlayer = 3;
@@ -29,11 +46,19 @@ export function createGameState(
       isAI: config.isAI,
       difficulty: config.difficulty,
       team: config.team,
+      personaId: config.personaId,
     });
   }
 
   const trumpCard = remaining[remaining.length - 1];
   const deckWithoutTrump = remaining.slice(0, remaining.length - 1);
+
+  // Normalised rather than trusted: the index reaches here from a caller's
+  // rotation counter, and an out-of-range seat would index `players` as
+  // undefined on the very first turn.
+  const seats = players.length;
+  const requested = options?.startingPlayerIndex ?? 0;
+  const startingPlayerIndex = ((requested % seats) + seats) % seats;
 
   return {
     players,
@@ -41,12 +66,32 @@ export function createGameState(
     trumpCard,
     trumpSuit: trumpCard.suit,
     currentTrick: [],
-    currentPlayerIndex: 0,
-    leadPlayerIndex: 0,
+    currentPlayerIndex: startingPlayerIndex,
+    leadPlayerIndex: startingPlayerIndex,
     phase: 'playing',
     trickWinnerId: null,
     lastTrick: null,
   };
+}
+
+/**
+ * Which seat leads the next game.
+ *
+ * The first game of a session draws a seat; every rematch after it passes the
+ * lead one seat along. Pure random on every game would happily deal the lead to
+ * the same player several times running, which is the bias this exists to
+ * remove — rotating is also how a real card table does it.
+ *
+ * `previous` is null when there is no prior game to rotate from.
+ */
+export function nextStarter(
+  previous: number | null,
+  playerCount: number,
+  rng: () => number = Math.random,
+): number {
+  return previous === null
+    ? Math.floor(rng() * playerCount)
+    : (previous + 1) % playerCount;
 }
 
 export function getCardPoints(card: Card): number {

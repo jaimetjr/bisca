@@ -12,6 +12,7 @@ import {
   AI_DELAY_MAX_MS,
   DEAL_ANIMATION_DURATION_MS,
   DEAL_ANIMATION_STAGGER_MS,
+  DEAL_ANIMATION_TOTAL_MS,
   GAME_SPEED_MULTIPLIER,
 } from '@/shared/constants/game';
 import GameCard from '@/components/Card';
@@ -21,9 +22,10 @@ import ScoreBoard from '@/components/ScoreBoard';
 import TutorialModal from '@/components/Tutorial';
 import { getApiUrl } from '@/shared/query-client';
 import { t } from '@/shared/i18n';
-import { createGameState, playCard, completeTrick } from '@/shared/lib/brisca/engine';
+import { createGameState, playCard, completeTrick, nextStarter } from '@/shared/lib/brisca/engine';
 import { GameState, Card, AIDifficulty } from '@/shared/lib/types';
 import { chooseAICard } from '@/shared/lib/brisca/ai';
+import { pickOpponents, toPersona } from '@/shared/lib/brisca/opponents';
 import { suggestPlay } from '@/shared/lib/brisca/coach';
 import { lessonForTrick, CoachLesson } from '@/shared/lib/brisca/trick-review';
 import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
@@ -44,7 +46,6 @@ import {
   COACH_BANNER_MARGIN,
 } from '@shared/lib/brisca/card-metrics';
 
-const AI_NAMES = ['Carlos', 'Maria', 'Pedro'];
 const HUMAN_ID = 'human';
 const MAX_RECONNECT_ATTEMPTS = 3;
 /**
@@ -174,23 +175,44 @@ export default function GameScreen() {
   const { isPremium } = useEntitlement();
   const { showAd } = useInterstitialAd(isPremium);
   const historySavedRef = useRef(false);
+  // Which seat led the previous game, so a rematch can pass the lead along
+  // instead of re-drawing it. Null until the first game of this screen.
+  const lastStarterRef = useRef<number | null>(null);
   const turnPulseAnim = useRef(new Animated.Value(1)).current;
   const turnPulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const handGlowAnim = useRef(new Animated.Value(0)).current;
 
   const initGame = useCallback(() => {
     const is2v2 = numPlayers === 4;
-    const configs: { id: string; name: string; isAI: boolean; difficulty?: AIDifficulty; team?: number }[] = [
+    // Drawn fresh every game, never repeating a seat. The difficulty stays the
+    // one the player chose — a persona changes how a bot plays, not how well.
+    const picks = pickOpponents(is2v2 ? 3 : 1);
+    const seat = (i: number, team?: number) => ({
+      id: `ai-${i + 1}`,
+      name: picks[i].name,
+      personaId: picks[i].id,
+      isAI: true,
+      difficulty,
+      team,
+    });
+
+    const configs: {
+      id: string; name: string; isAI: boolean;
+      difficulty?: AIDifficulty; team?: number; personaId?: string;
+    }[] = [
       { id: HUMAN_ID, name: playerName, isAI: false, team: is2v2 ? 1 : undefined },
     ];
     if (is2v2) {
-      configs.push({ id: 'ai-1', name: AI_NAMES[0], isAI: true, difficulty, team: 2 });
-      configs.push({ id: 'ai-2', name: AI_NAMES[1], isAI: true, difficulty, team: 1 });
-      configs.push({ id: 'ai-3', name: AI_NAMES[2], isAI: true, difficulty, team: 2 });
+      configs.push(seat(0, 2), seat(1, 1), seat(2, 2));
     } else {
-      configs.push({ id: 'ai-1', name: AI_NAMES[0], isAI: true, difficulty });
+      configs.push(seat(0));
     }
-    const state = createGameState(configs);
+    // The lead is worth real points, and it used to be the human's every single
+    // game. Drawn once per screen, then rotated on each rematch.
+    const startingPlayerIndex = nextStarter(lastStarterRef.current, configs.length);
+    lastStarterRef.current = startingPlayerIndex;
+
+    const state = createGameState(configs, undefined, { startingPlayerIndex });
     setMyId(HUMAN_ID);
     setGameState(state);
 
@@ -321,10 +343,25 @@ export default function GameScreen() {
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     if (!currentPlayer?.isAI) return;
 
+    // The very first card of the game: nothing played, no trick finished yet.
+    // Now that the starting seat is drawn, the AI can hold this lead, and its
+    // normal 600ms delay would land it mid deal-in. Wait the animation out.
+    const isOpeningLead = gameState.currentTrick.length === 0 && gameState.lastTrick === null;
+    const delay =
+      AI_DELAY_MIN_MS +
+      Math.random() * AI_DELAY_MAX_MS +
+      (isOpeningLead ? DEAL_ANIMATION_TOTAL_MS : 0);
+
     aiTimerRef.current = setTimeout(() => {
-      const card = chooseAICard(gameState, currentPlayer.id, currentPlayer.difficulty ?? 'medium');
+      const persona = toPersona(currentPlayer.personaId);
+      const card = chooseAICard(
+        gameState,
+        currentPlayer.id,
+        currentPlayer.difficulty ?? 'medium',
+        persona ? { weights: persona.weights } : {},
+      );
       if (card) setGameState(playCard(gameState, currentPlayer.id, card));
-    }, AI_DELAY_MIN_MS + Math.random() * AI_DELAY_MAX_MS);
+    }, delay);
 
     return () => { if (aiTimerRef.current) clearTimeout(aiTimerRef.current); };
   }, [gameState?.currentPlayerIndex, gameState?.phase, gameState?.currentTrick.length, isOnline]);
