@@ -17,6 +17,7 @@ import { useRewards } from '@shared/hooks/useRewards';
 import { useRewardedAd } from '@shared/hooks/useRewardedAd';
 import { useTutorial } from '@shared/hooks/useTutorial';
 import { reportAdLoadError, reportAdGiveUp } from '@shared/lib/ad-monitoring';
+import { setPendingAuthMode } from '@shared/lib/auth-nav-intent';
 
 const BANNER_AD_UNIT_ID = __DEV__
   ? TestIds.BANNER
@@ -81,8 +82,15 @@ export default function HomeScreen() {
     };
 
     const handleCreateAccount = async () => {
+        setPendingAuthMode('signup');
         await disableGuestMode();
-        router.replace('/(auth)/login');
+        // AuthGuard detects isGuest=false outside the auth group and
+        // navigates to login, consuming the pending mode set above.
+    };
+
+    const handleSignIn = async () => {
+        setPendingAuthMode('signin');
+        await disableGuestMode();
     };
 
     const canEarnReward = rewards.canEarnMore();
@@ -124,11 +132,21 @@ export default function HomeScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 {isGuest && (
-                    <Pressable style={styles.guestBanner} onPress={handleCreateAccount}>
-                        <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Colors.gold} />
-                        <Text style={styles.guestBannerText}>{t('home.guestBanner')}</Text>
-                        <Text style={styles.guestBannerCta}>{t('auth.createAccount')}</Text>
-                    </Pressable>
+                    <View style={styles.guestBanner}>
+                        <View style={styles.guestBannerRow}>
+                            <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Colors.gold} />
+                            <Text style={styles.guestBannerText}>{t('home.guestBanner')}</Text>
+                        </View>
+                        <View style={styles.guestBannerActions}>
+                            <Pressable onPress={handleSignIn} hitSlop={8}>
+                                <Text style={styles.guestBannerCta}>{t('auth.signIn')}</Text>
+                            </Pressable>
+                            <Text style={styles.guestBannerDivider}>·</Text>
+                            <Pressable onPress={handleCreateAccount} hitSlop={8}>
+                                <Text style={styles.guestBannerCta}>{t('auth.createAccount')}</Text>
+                            </Pressable>
+                        </View>
+                    </View>
                 )}
 
                 <View style={styles.topActions}>
@@ -465,9 +483,7 @@ const makeStyles = (air: (n: number) => number) => StyleSheet.create({
         fontFamily: 'Inter_500Medium',
     },
     guestBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
+        gap: 6,
         backgroundColor: Colors.whiteAlpha,
         borderWidth: 1,
         borderColor: Colors.gold,
@@ -476,16 +492,31 @@ const makeStyles = (air: (n: number) => number) => StyleSheet.create({
         paddingHorizontal: 14,
         marginBottom: air(12),
     },
+    guestBannerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
     guestBannerText: {
         flex: 1,
         color: Colors.textSecondary,
         fontSize: 12,
         fontFamily: 'Inter_400Regular',
     },
+    guestBannerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingLeft: 24,
+    },
     guestBannerCta: {
         color: Colors.gold,
         fontSize: 12,
         fontFamily: 'Inter_600SemiBold',
+    },
+    guestBannerDivider: {
+        color: Colors.textSecondary,
+        fontSize: 12,
     },
     bannerContainer: {
         alignItems: 'center',

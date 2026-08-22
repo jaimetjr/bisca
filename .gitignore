@@ -47,3 +47,6 @@ server_dist/
 CLAUDE.md
 .env.development
 .env.production
+
+# design specs — mantidos localmente, fora do repositório remoto
+docs/superpowers/specs/

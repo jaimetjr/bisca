@@ -474,7 +474,12 @@ async function handleMessage(ws: WebSocket, data: ValidatedClientMessage) {
       }
 
       const configs = room.players.map(p => ({ id: p.id, name: p.name, isAI: false, team: p.team }));
-      const gameState = createGameState(configs);
+      // The lead is worth real points and used to always fall to the host.
+      // Drawn per game: a rematch here sends players back to the lobby rather
+      // than restarting the room, so there is no sequence to rotate through.
+      const gameState = createGameState(configs, undefined, {
+        startingPlayerIndex: Math.floor(Math.random() * configs.length),
+      });
       room.gameState = gameState;
       room.status = 'playing';
       touchRoom(room);

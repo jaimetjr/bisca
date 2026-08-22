@@ -15,6 +15,32 @@
 export const CARD_ASPECT = 1016 / 620;
 
 /**
+ * Line box of `coachBannerText`, in dp. Set explicitly in the stylesheet too:
+ * left to the font it is whatever the platform decides, and this constant would
+ * be guessing at it.
+ */
+export const COACH_BANNER_LINE_HEIGHT = 17;
+
+/** Gap between the coach banner and the opponents' row. */
+export const COACH_BANNER_MARGIN = 8;
+
+/** `coachBanner` paddingVertical and borderWidth, per side. */
+const COACH_BANNER_PADDING = 8;
+const COACH_BANNER_BORDER = 1;
+
+/**
+ * Lines the coach banner holds when the screen can afford them.
+ *
+ * One line was the old reservation and it does not fit the text: the longest
+ * coach and review strings run to ~103 characters, which is two lines on any
+ * phone, and 11 of the 17 Portuguese ones are cut mid-sentence by a one-line
+ * clamp. GameScreen clamps the message to whatever this resolves to, so the box
+ * can never outgrow its reservation — the alternative is a table that resizes
+ * under the player's hands depending on which lesson came up.
+ */
+const COACH_BANNER_MAX_LINES = 2;
+
+/**
  * Fixed vertical costs of the game screen, in dp. Measured from the rendered DOM
  * rather than added up from the stylesheet — the two disagreed by 5dp, which was
  * enough to clip the trump suit name off the bottom of the table on a 375x667.
@@ -23,8 +49,8 @@ export const CARD_ASPECT = 1016 / 620;
 const CHROME = {
   /** topBar: backBtn 36 + marginBottom 8 */
   topBar: 44,
-  /** coachBanner: padding 16 + text 17 + marginBottom 8. Practice mode only. */
-  coachBanner: 41,
+  /** Gap under the coach banner. The box itself is sized by `coachBannerFor`. */
+  coachBannerMargin: COACH_BANNER_MARGIN,
   /** OpponentHand nameTag + container gap + opponentsRow marginBottom */
   opponentChrome: 32,
   /** tableContainer marginBottom */
@@ -58,8 +84,25 @@ const CHROME = {
    * frame — but only while it was lit, which is the one moment it is visible.
    */
   handHorizontal: 16,
-  /** GameTable.playedCard inset from the table edge */
-  playedInset: 8,
+  /**
+   * GameTable.playedCard inset from the table edge, and — on a phone — the gap
+   * between the played cards as well (see `trickGap`).
+   *
+   * Tightened from 8 to buy the 2v2 table card size. That layout is bound by
+   * *width*, not height: three cards go across the trick area and it comes out
+   * using 100% of what it has, spare of 0-2px on every device from a 375x647 to
+   * a 430x848 — which is why the played card sat at 0.79x the hand card on all
+   * of them, phone size making no difference. Six dp of margin across the row is
+   * the cheapest width there was to find: the table card goes 82 -> 86dp.
+   *
+   * `GameTable` reads this rather than repeating the number, so the drawn margin
+   * and the budgeted one cannot drift apart.
+   *
+   * The card is still 3dp of gold border away from the outside on top of this,
+   * so the "cards running past the edge" report stays fixed — that was about the
+   * border going unmodelled, not about this inset.
+   */
+  playedInset: 5,
   /** GameScreen container adds 8dp to both the top and bottom safe-area padding */
   screenVertical: 16,
   /**
@@ -103,6 +146,13 @@ const HAND_GAP = 10;
  */
 const HAND_CARD_BORDER = 3;
 
+/**
+ * Slack kept for the rounding in `box()`: a card's height is
+ * `round(width * CARD_ASPECT)`, so two of them can total 1dp more than the
+ * arithmetic that sized them assumed. Only matters where a limit is hard.
+ */
+const HEIGHT_ROUNDING = 1;
+
 const MIN_HAND_CARD = 84;
 const MAX_HAND_CARD = 190;
 const MIN_TABLE_CARD = 56;
@@ -114,8 +164,16 @@ const MIN_TABLE_CARD = 56;
  * up to here. Past this the surplus goes to the table instead. Set above the
  * 90dp fixed size that drew the "cards are too small" complaints, so no device
  * lands back where that started.
+ *
+ * Lowered from 96 after measuring what the priority was costing the table on a
+ * short screen. The played card was 1.01x the hand card on a 390x763 and 1.08x
+ * on a 412x830, but only 0.77x on a 375x647 and 0.69x on a 360x568 — the hand
+ * held its comfortable size and the table absorbed the whole shortfall, so the
+ * two read as different decks on a small phone. Three dp of hand buys the table
+ * enough to bring that back in line, and 93 still clears the 90dp floor the
+ * layout tests hold every device to.
  */
-const COMFORTABLE_HAND_CARD = 96;
+const COMFORTABLE_HAND_CARD = 93;
 
 /**
  * Where the phone layout stops being the right shape.
@@ -185,8 +243,25 @@ const MAX_DECK_CARD_LARGE = 120;
  * the table is not.
  *
  * `deckHeightLimit` still caps it, so the smallest phones are unaffected.
+ *
+ * Raised from 0.62 on a call for a bigger trump, and 0.70 is where the trade
+ * stops paying. In 1v1 it is free — the played card there is bound by height, so
+ * the trump grows and the trick does not move: 88 -> 96dp on a 390x763. In 2v2
+ * the two share one width and every dp comes out of the trick:
+ *
+ *     ratio   trump   played      (390x763, 2v2, measured)
+ *     0.62      64      86
+ *     0.70      73      83
+ *     0.75      78      82   <- gives back everything `playedInset` bought
+ *     0.80      83      80   <- worse than before that change
+ *
+ * This is also the lever to reach for from the other side: if the played cards
+ * ever read as too small in 2v2, lowering it is the only width left to take.
+ * Both directions are the same trade — the trump is live information the player
+ * checks all match, the fourth card on the table is not — so move it knowing
+ * which of the two is being paid.
  */
-const MIN_DECK_RATIO = 0.62;
+const MIN_DECK_RATIO = 0.70;
 
 /**
  * Share of the trick area's *unused* width that the deck sidebar may grow into.
@@ -218,10 +293,20 @@ const MAX_TRICK_OVERLAP = 0.3;
 
 /**
  * Below this, a played card is small enough to be worth overlapping to rescue.
- * It is the fixed size the old layout used, so the fallback kicks in exactly
- * where the alternative would be a visible regression.
+ *
+ * Raised from 75 — the fixed size the old layout used — after a report that the
+ * table cards looked small next to the hand on a 375x667 phone. They did: at 75
+ * that device laid its two played cards out clear of each other at exactly 75dp
+ * beside a 97dp hand card. Overlapping instead takes the same table height and
+ * turns it into 92dp cards, because two cards sharing 30% of their height need
+ * far less room than two stacked whole.
+ *
+ * So the threshold is where the trade turns: below it, the artwork an overlap
+ * hides costs less than the size a clear layout gives up. Every device with real
+ * room is untouched — a 390x763 and up still lay their cards out clear, and this
+ * changes nothing on a tablet.
  */
-const COMFORTABLE_TABLE_CARD = 75;
+export const COMFORTABLE_TABLE_CARD = 85;
 
 /**
  * Table height worth reserving before the hand grows past comfortable.
@@ -259,6 +344,46 @@ const LAYOUT_SWITCH_MARGIN = 1.1;
  */
 const LARGE_TRICK_GAP = 24;
 
+export interface CoachBannerBox {
+  /** Box height including padding and border — React Native sizes border-box. */
+  height: number;
+  /** `numberOfLines` for the message, so it cannot outgrow `height`. */
+  lines: number;
+  /** Height it costs the column: the box plus its margin. */
+  reserved: number;
+}
+
+/**
+ * Coach banner the screen can afford.
+ *
+ * Two lines everywhere there is room, one where there is not. A 360x568 phone —
+ * 5", three-button nav bar — does not have 60dp to give: with the table at its
+ * 180dp floor and the hand at its 84dp one, the column comes out over the screen
+ * and something has to be short. A clipped second line of coaching is the
+ * cheapest thing on that list.
+ */
+function coachBannerFor(height: number): CoachBannerBox {
+  const box = (lines: number) => ({
+    height: lines * COACH_BANNER_LINE_HEIGHT + 2 * COACH_BANNER_PADDING + 2 * COACH_BANNER_BORDER,
+    lines,
+  });
+  // Everything else at its floor: the fixed chrome, the table's minimum, and
+  // the smallest hand card with the opponents' row that scales off it.
+  const floor =
+    CHROME.screenVertical + CHROME.topBar + CHROME.tableMargin + CHROME.opponentChrome +
+    CHROME.handLabel + CHROME.handPadding + CHROME.tableMin +
+    MIN_HAND_CARD * (1 + SMALL_RATIO) * CARD_ASPECT;
+
+  for (let lines = COACH_BANNER_MAX_LINES; lines > 1; lines--) {
+    const b = box(lines);
+    if (floor + b.height + COACH_BANNER_MARGIN <= height) {
+      return { ...b, reserved: b.height + COACH_BANNER_MARGIN };
+    }
+  }
+  const b = box(1);
+  return { ...b, reserved: b.height + COACH_BANNER_MARGIN };
+}
+
 export interface CardBox {
   width: number;
   height: number;
@@ -276,6 +401,12 @@ export interface CardMetrics {
    * which is a tighter constraint than the opponents' row.
    */
   deck: CardBox;
+  /**
+   * The practice-mode coach banner. Sized here rather than in the stylesheet
+   * because the column pays for it out of the table's height, and a box that
+   * sized itself to the current message would make that reservation a fiction.
+   */
+  coachBanner: CoachBannerBox;
   handGap: number;
   /** Negative marginLeft that overlaps the cards in an opponent's fan. */
   fanOverlap: number;
@@ -336,7 +467,8 @@ export function computeCardMetrics({
   playerCount = 2,
   extraTableHeight = 0,
 }: CardMetricsInput): CardMetrics {
-  const banner = reserveCoachBanner ? CHROME.coachBanner : 0;
+  const coachBanner = coachBannerFor(height);
+  const banner = reserveCoachBanner ? coachBanner.reserved : 0;
 
   // Width available to the hand, split across three cards, two gaps and the
   // border each card draws around itself when it is playable.
@@ -434,7 +566,12 @@ export function computeCardMetrics({
   // The stack is two cards *and the gap between them*. Dividing the height by
   // two flat is what left a tablet's played cards touching edge to edge.
   const clear = (stackHeight - trickGap) / 2 / CARD_ASPECT;
-  const overlapped = stackHeight / (2 - MAX_TRICK_OVERLAP) / CARD_ASPECT;
+  // A card's height is `round(width * ASPECT)`, so a pair of them can come out
+  // up to 1dp taller than the width this solves for — and `MAX_TRICK_OVERLAP` is
+  // a hard limit, not a target, so landing exactly on it means rounding pushes
+  // through it. Invisible while the table had slack; the moment `playedInset`
+  // was tightened the 375x620 case overlapped 43dp against a 42.9dp ceiling.
+  const overlapped = (stackHeight - HEIGHT_ROUNDING) / (2 - MAX_TRICK_OVERLAP) / CARD_ASPECT;
   const crossByHeight = clear >= COMFORTABLE_TABLE_CARD ? clear : overlapped;
   // Two players put both cards in the *same* centred column, one above the
   // other — modelling it as two across reserved a column that is never used and
@@ -496,6 +633,7 @@ export function computeCardMetrics({
     medium,
     large,
     deck,
+    coachBanner,
     handGap: HAND_GAP,
     fanOverlap: -Math.round(small.width * FAN_RATIO),
     trickLayout,
@@ -505,12 +643,58 @@ export function computeCardMetrics({
   };
 }
 
+/**
+ * Largest correction the measurement loop may apply, in either direction. A
+ * bound on a value that comes from the device, so a layout that somehow never
+ * settles cannot run away with the card size.
+ */
+const MAX_TABLE_CORRECTION = 240;
+
+/**
+ * Measurements under this are layout noise — rounding, a subpixel inset — and
+ * acting on them would re-render for nothing.
+ */
+const TABLE_CORRECTION_DEADBAND = 4;
+
+/**
+ * Next value for `extraTableHeight`, given what the table box just measured and
+ * what the model predicted for it.
+ *
+ * Corrects in *both* directions. It used to only ever go up, on the reasoning
+ * that the model is pessimistic and the loop is there to hand back what it
+ * over-reserved. That holds right up until something the model reserved is not
+ * on screen yet: practice mode reserves the coach banner permanently but only
+ * renders it once there is a message, so the first trick ran with 41dp of table
+ * that nothing was using. The loop claimed it, the banner then appeared and took
+ * it back, and a one-way ratchet had no way to give it up — leaving the played
+ * cards sized for a table taller than the one they were drawn into.
+ * `GameTable.table` clips its overflow, so that arrived as a card shaved off at
+ * the gold border rather than as anything a log would show.
+ *
+ * The same trap is set by the error and reconnect banners, which the model does
+ * not reserve at all.
+ *
+ * Correcting downward cannot oscillate: nothing in the measured height depends
+ * on this value. The hand and the opponents' row are sized before it and the
+ * table takes the remainder, so the measurement is a constant the loop is
+ * solving for, not a function of its own output.
+ */
+export function nextTableCorrection(
+  previous: number,
+  measured: number,
+  modelled: number,
+): number {
+  const missed = measured - modelled;
+  if (Math.abs(missed) < TABLE_CORRECTION_DEADBAND) return previous;
+  return clamp(previous + missed, -MAX_TABLE_CORRECTION, MAX_TABLE_CORRECTION);
+}
+
 /** Vertical space the game screen needs at these metrics. Used by the layout test. */
 export function columnHeight(m: CardMetrics, reserveCoachBanner?: boolean): number {
   return (
     CHROME.screenVertical +
     CHROME.topBar +
-    (reserveCoachBanner ? CHROME.coachBanner : 0) +
+    (reserveCoachBanner ? m.coachBanner.reserved : 0) +
     m.small.height + CHROME.opponentChrome +
     m.tableMaxHeight + CHROME.tableMargin +
     CHROME.handLabel + m.large.height + CHROME.handPadding

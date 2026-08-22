@@ -1,5 +1,5 @@
 import { Card, GameState, Player, AIDifficulty } from '../types';
-import { AI_SEARCH_CONFIG, AI_HAND_POTENTIAL_WEIGHT } from '../../constants/game';
+import { AI_SEARCH_CONFIG, EvalWeights, NEUTRAL_WEIGHTS } from '../../constants/game';
 import { legalCards } from './engine';
 import { chooseHeuristicCard } from './ai-heuristic';
 import { sampleDeal } from './ai-determinize';
@@ -47,9 +47,10 @@ import {
  * engine's GameState; see that file for why.
  */
 
-// A trump that is still master is worth roughly a King in future capture.
-const TRUMP_CONTROL_BONUS = 4;
 // Points in a trick worth spending a winner on — mirrors the legacy heuristic.
+// Move ordering only, so it changes search speed and never the card chosen.
+// That is exactly why it is NOT an EvalWeights dial: a persona tuned through it
+// would play identically to the neutral baseline.
 const CONTESTED_TRICK_POINTS = 6;
 
 /** Filled in by the search when supplied. Benchmark instrumentation only. */
@@ -68,6 +69,16 @@ export interface SearchOptions {
   maxTrickDepth?: number;
   timeBudgetMs?: number;
   stats?: SearchStats;
+  /**
+   * What this bot values, defaulting to NEUTRAL_WEIGHTS. Opponent personas pass
+   * their own to get a distinct style at unchanged strength.
+   *
+   * MUST stay one object for the whole search: both sides of a position are
+   * evaluated with these weights, which is what keeps `evaluate` antisymmetric
+   * (see the note on `evaluate`). Weighting "my side" differently from "theirs"
+   * would bias every node silently.
+   */
+  weights?: EvalWeights;
 }
 
 // ─── Sides ───────────────────────────────────────────────────────────────────
@@ -97,7 +108,12 @@ export function sidesOf(state: GameState): number[] {
  * extra control bonus because their value is mostly in capturing *other*
  * people's points, not in their own face value.
  */
-function handPotential(state: SimState, side: number, alive: Card[]): number {
+function handPotential(
+  state: SimState,
+  side: number,
+  alive: Card[],
+  weights: EvalWeights,
+): number {
   let total = 0;
 
   for (let i = 0; i < state.hands.length; i++) {
@@ -115,7 +131,7 @@ function handPotential(state: SimState, side: number, alive: Card[]): number {
 
       total += cardPoints(card) * survival;
       if (state.trumpSuit && card.suit === state.trumpSuit) {
-        total += TRUMP_CONTROL_BONUS * survival;
+        total += weights.trumpControlBonus * survival;
       }
     }
   }
@@ -123,7 +139,7 @@ function handPotential(state: SimState, side: number, alive: Card[]): number {
   return total;
 }
 
-function evaluateSim(state: SimState, side: number): number {
+function evaluateSim(state: SimState, side: number, weights: EvalWeights): number {
   const opp = simOtherSide(state, side);
   let value = simSideScore(state, side) - simSideScore(state, opp);
 
@@ -138,8 +154,8 @@ function evaluateSim(state: SimState, side: number): number {
   }
 
   const alive = simAliveCards(state);
-  value += AI_HAND_POTENTIAL_WEIGHT * (
-    handPotential(state, side, alive) - handPotential(state, opp, alive)
+  value += weights.handPotentialWeight * (
+    handPotential(state, side, alive, weights) - handPotential(state, opp, alive, weights)
   );
 
   return value;
@@ -151,9 +167,18 @@ function evaluateSim(state: SimState, side: number): number {
  * Must satisfy `evaluate(state, a) === -evaluate(state, b)` for the two
  * opposing sides — an asymmetric evaluation silently biases the whole search.
  * tests/unit/ai-search.test.ts asserts this directly.
+ *
+ * Antisymmetry survives a persona's weights because both sides are scored with
+ * the same ones. It would NOT survive scoring each side with its own weights,
+ * which is why `weights` is a single value threaded down from the root rather
+ * than looked up per player.
  */
-export function evaluate(state: GameState, side: number): number {
-  return evaluateSim(toSimState(state), side);
+export function evaluate(
+  state: GameState,
+  side: number,
+  weights: EvalWeights = NEUTRAL_WEIGHTS,
+): number {
+  return evaluateSim(toSimState(state), side, weights);
 }
 
 /**
@@ -174,6 +199,7 @@ interface SearchCtx {
   now: () => number;
   nodes: number;
   aborted: boolean;
+  weights: EvalWeights;
 }
 
 /**
@@ -214,14 +240,14 @@ function searchValue(
   if (state.done) return terminalValue(state, ctx.rootSide);
 
   ctx.nodes++;
-  if (plyBudget <= 0) return evaluateSim(state, ctx.rootSide);
+  if (plyBudget <= 0) return evaluateSim(state, ctx.rootSide, ctx.weights);
   if (ctx.now() > ctx.deadline) {
     ctx.aborted = true;
-    return evaluateSim(state, ctx.rootSide);
+    return evaluateSim(state, ctx.rootSide, ctx.weights);
   }
 
   const moves = orderedMoves(state, ctx);
-  if (moves.length === 0) return evaluateSim(state, ctx.rootSide);
+  if (moves.length === 0) return evaluateSim(state, ctx.rootSide, ctx.weights);
 
   const maximizing = state.sides[state.current] === ctx.rootSide;
   let best = maximizing ? -Infinity : Infinity;
@@ -270,6 +296,7 @@ export function chooseSearchCard(
   const maxTrickDepth = options.maxTrickDepth ?? preset.maxTrickDepth;
   const timeBudgetMs = options.timeBudgetMs ?? preset.timeBudgetMs;
   const epsilon = options.epsilon ?? preset.epsilon;
+  const weights = options.weights ?? NEUTRAL_WEIGHTS;
 
   const rootSide = sideOf(me, state.players);
   const deadline = now() + timeBudgetMs;
@@ -283,7 +310,9 @@ export function chooseSearchCard(
 
   // `deadline` is set per-depth inside the loop (Infinity on the first pass);
   // this is just the initial value.
-  const ctx: SearchCtx = { rootSide, strictFollowSuit, deadline, now, nodes: 0, aborted: false };
+  const ctx: SearchCtx = {
+    rootSide, strictFollowSuit, deadline, now, nodes: 0, aborted: false, weights,
+  };
   let ranking: { card: Card; value: number }[] | null = null;
   let depthReached = 0;
   const startedAt = now();

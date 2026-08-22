@@ -171,8 +171,16 @@ export default function SetupScreen() {
                       size={15}
                       color={isActive ? Colors.textDark : Colors.textSecondary}
                     />
-                    <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                      {m === 'create' ? t('setup.createRoom') : m === 'browse' ? t('setup.browseRooms') : t('setup.joinRoom')}
+                    {/* Short, tab-only labels. The gold button below keeps the
+                        full phrase via setup.createRoom / setup.joinRoom — the
+                        two used to share those keys, and the tab has room for
+                        about 12 characters, which half the languages blew past
+                        ("Unisciti alla Stanza", "Parcourir les Salons"). */}
+                    <Text
+                      style={[styles.tabText, isActive && styles.tabTextActive]}
+                      numberOfLines={1}
+                    >
+                      {m === 'create' ? t('setup.tabCreate') : m === 'browse' ? t('setup.tabBrowse') : t('setup.tabJoin')}
                     </Text>
                   </Pressable>
                 );

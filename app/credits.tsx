@@ -16,7 +16,9 @@ import { useLanguage } from '@shared/hooks/useLanguage';
  * `docs/licenses/README.md` is the authoritative record; keep the two in sync.
  */
 const ENTRIES: { icon: React.ComponentProps<typeof MaterialCommunityIcons>['name']; labelKey: string; detail: string }[] = [
-  { icon: 'cards', labelKey: 'credits.cards', detail: 'Baraja española — licensed stock illustration' },
+  // Not required — the Depositphotos Standard License asks for no attribution.
+  // Credited anyway, to match how the font and the icons are treated.
+  { icon: 'cards', labelKey: 'credits.cards', detail: 'Baraja española by JuniorB (Adolfo Gregorio Maiorkevich) — Depositphotos Standard License' },
   { icon: 'card-bulleted-outline', labelKey: 'credits.cardBack', detail: 'Original artwork — © Bisca' },
   { icon: 'format-font', labelKey: 'credits.font', detail: 'Inter by Rasmus Andersson — SIL Open Font License 1.1' },
   { icon: 'shape-outline', labelKey: 'credits.icons', detail: 'Material Design Icons — Apache License 2.0' },
