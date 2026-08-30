@@ -50,6 +50,7 @@
     "expo-router": "~6.0.23",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
+    "expo-store-review": "~9.0.9",
     "expo-symbols": "~1.0.8",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
