@@ -505,11 +505,10 @@ This check already caught one real defect: the Spanish short description was 82/
 the live listing cannot match what was written here.
 
 ## Known copy caveat — Italian
-`shared/i18n/translations.ts` sets the Italian `home.subtitle` to "Il Classico Gioco di Carte
-Spagnolo" — telling Italian players that Briscola is a *Spanish* card game. Briscola is
-Italian in origin and is played by almost everybody in Italy, so this reads as wrong to the
-exact audience the it-IT listing is meant to attract. Worth changing to something like "Il
-Classico Gioco di Carte Italiano" before pushing the Italian listing.
+The Italian `home.subtitle` in `shared/i18n/translations.ts` used to read "Il Classico Gioco di
+Carte Spagnolo", telling Italian players that Briscola is a *Spanish* card game. It now reads
+"Il Classico Gioco di Carte Italiano". The fix reaches players only in a new app build; the
+store listing itself was never affected.
 
 The card artwork is Spanish-suited (`assets/images/spanish`) with no Italian deck option. The
 Spanish and Italian 40-card decks are structurally identical and the app already localizes the
