@@ -39,6 +39,7 @@ import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
 import { useInterstitialAd } from '@shared/hooks/useInterstitialAd';
+import { useReviewPrompt } from '@shared/hooks/useReviewPrompt';
 import { CardMetricsProvider, useComputedCardMetrics } from '@shared/hooks/useCardMetrics';
 import {
   nextTableCorrection,
@@ -174,7 +175,9 @@ export default function GameScreen() {
   const queryClient = useQueryClient();
   const { isPremium } = useEntitlement();
   const { showAd } = useInterstitialAd(isPremium);
+  const { recordGameFinished } = useReviewPrompt();
   const historySavedRef = useRef(false);
+  const reviewPromptedRef = useRef(false);
   // Which seat led the previous game, so a rematch can pass the lead along
   // instead of re-drawing it. Null until the first game of this screen.
   const lastStarterRef = useRef<number | null>(null);
@@ -219,6 +222,7 @@ export default function GameScreen() {
     setErrorMsg('');
     seenCardIdsRef.current = new Set();
     historySavedRef.current = false;
+    reviewPromptedRef.current = false;
   }, [numPlayers, playerName, difficulty]);
 
   const sendWsMessage = useCallback((msg: ClientMessage) => {
@@ -424,6 +428,25 @@ export default function GameScreen() {
         queryClient.invalidateQueries({ queryKey: ['stats'] });
       } catch {}
     })();
+  }, [gameState?.phase]);
+
+  // Ask for a Play rating on the way into `gameOver`, which is before the
+  // player can reach the interstitial on Play Again / Exit. Requesting a review
+  // straight after an ad is a reliable way to collect one-star ratings.
+  //
+  // Guests are included on purpose — a guest who has won three games is a fine
+  // person to ask. Practice games are not real wins, so they never count.
+  useEffect(() => {
+    if (gameState?.phase !== 'gameOver' || isPractice || reviewPromptedRef.current) return;
+    reviewPromptedRef.current = true;
+
+    const humanPlayer = gameState.players.find(p => p.id === myId);
+    if (!humanPlayer) return;
+
+    const opponentScore = Math.max(
+      ...gameState.players.filter(p => p.id !== myId).map(p => p.score)
+    );
+    recordGameFinished(humanPlayer.score > opponentScore);
   }, [gameState?.phase]);
 
   useEffect(() => {

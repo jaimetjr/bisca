@@ -1453,7 +1453,7 @@ export const translations: Record<string, Record<string, string>> = {
   },
   it: {
     'home.title': 'Briscola',
-    'home.subtitle': 'Il Classico Gioco di Carte Spagnolo',
+    'home.subtitle': 'Il Classico Gioco di Carte Italiano',
     'home.playAI': 'Gioca vs IA',
     'home.playAIDesc': '1v1 o 2v2 contro l\'IA',
     'home.playOnline': 'Gioca Online',

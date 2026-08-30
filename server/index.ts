@@ -15,6 +15,12 @@ import {
   ACCOUNT_DELETION_HTML,
   APP_ADS_TXT,
 } from "./lib/legal-content";
+import {
+  ROBOTS_TXT,
+  landingHtml,
+  pickLandingLanguage,
+  sitemapXml,
+} from "./lib/landing-content";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -93,17 +99,6 @@ function setupRequestLogging(app: express.Application) {
   );
 }
 
-function getAppName(): string {
-  try {
-    const appJsonPath = path.resolve(process.cwd(), "app.json");
-    const appJsonContent = fs.readFileSync(appJsonPath, "utf-8");
-    const appJson = JSON.parse(appJsonContent);
-    return appJson.expo?.name || "App Landing Page";
-  } catch {
-    return "App Landing Page";
-  }
-}
-
 function serveExpoManifest(platform: string, res: Response) {
   const manifestPath = path.resolve(
     process.cwd(),
@@ -126,55 +121,43 @@ function serveExpoManifest(platform: string, res: Response) {
   res.send(manifest);
 }
 
-function serveLandingPage({
-  req,
-  res,
-  landingPageTemplate,
-  appName,
-}: {
-  req: Request;
-  res: Response;
-  landingPageTemplate: string;
-  appName: string;
-}) {
-  const forwardedProto = req.header("x-forwarded-proto");
-  const protocol = forwardedProto || req.protocol || "https";
-  const forwardedHost = req.header("x-forwarded-host");
-  const host = forwardedHost || req.get("host");
-  const baseUrl = `${protocol}://${host}`;
-  const expsUrl = `${host}`;
+/**
+ * Public origin of this deployment, honouring the proxy headers Railway sets.
+ * Used for canonical/hreflang URLs and the sitemap, which must be absolute.
+ */
+function publicBaseUrl(req: Request): string {
+  const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+  const host = req.header("x-forwarded-host") || req.get("host");
+  return `${protocol}://${host}`;
+}
 
-  log.debug({ baseUrl, expsUrl }, 'serving landing page');
+function serveLandingPage({ req, res }: { req: Request; res: Response }) {
+  const lang = pickLandingLanguage(
+    req.header("accept-language"),
+    typeof req.query.hl === "string" ? req.query.hl : undefined,
+  );
 
-  const html = landingPageTemplate
-    .replace(/BASE_URL_PLACEHOLDER/g, baseUrl)
-    .replace(/EXPS_URL_PLACEHOLDER/g, expsUrl)
-    .replace(/APP_NAME_PLACEHOLDER/g, appName);
+  log.debug({ lang }, "serving landing page");
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.status(200).send(html);
+  // Language depends on the request header, so shared caches must not serve
+  // one visitor's language to another.
+  res.setHeader("Vary", "Accept-Language");
+  res.status(200).send(landingHtml(lang, publicBaseUrl(req)));
 }
 
 function configureExpoAndLanding(app: express.Application) {
-  const templatePath = path.resolve(
-    process.cwd(),
-    "server",
-    "templates",
-    "landing-page.html",
-  );
-  let landingPageTemplate: string | null = null;
-  try {
-    landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
-  } catch {
-    // The landing page is an optional presentation asset. Bundled deploy
-    // images (e.g. Railway running server_dist without the source tree) may
-    // not ship the template — fall back to a minimal page instead of
-    // crashing the whole server at boot.
-    log.warn({ templatePath }, "landing page template missing; serving fallback");
-  }
-  const appName = getAppName();
-
   log.info('Serving static Expo files with dynamic manifest routing');
+
+  // Crawler directives. These sit ahead of the `/` handler so they are never
+  // shadowed by it, and are generated rather than read from disk for the same
+  // reason as the landing page itself.
+  app.get("/robots.txt", (req: Request, res: Response) =>
+    res.type("text/plain").send(ROBOTS_TXT(publicBaseUrl(req))),
+  );
+  app.get("/sitemap.xml", (req: Request, res: Response) =>
+    res.type("application/xml").send(sitemapXml(publicBaseUrl(req))),
+  );
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api")) {
@@ -191,25 +174,7 @@ function configureExpoAndLanding(app: express.Application) {
     }
 
     if (req.path === "/") {
-      if (landingPageTemplate) {
-        return serveLandingPage({
-          req,
-          res,
-          landingPageTemplate,
-          appName,
-        });
-      }
-      // Minimal fallback so `/` still returns 200 (useful as a healthcheck).
-      return res
-        .status(200)
-        .type("html")
-        .send(
-          `<!doctype html><meta charset="utf-8"><title>${appName}</title>` +
-            `<body style="font-family:system-ui;background:#1a472a;color:#fff;` +
-            `display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0">` +
-            `<div style="text-align:center"><h1>${appName}</h1>` +
-            `<p style="opacity:.7">API server is running.</p></div>`,
-        );
+      return serveLandingPage({ req, res });
     }
 
     next();
