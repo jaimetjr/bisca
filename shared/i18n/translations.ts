@@ -1090,7 +1090,7 @@ export const translations: Record<string, Record<string, string>> = {
   },
   pt: {
     'home.title': 'Bisca',
-    'home.subtitle': 'O Clássico Jogo de Cartas Espanhol',
+    'home.subtitle': 'O Clássico Jogo de Cartas',
     'home.playAI': 'Jogar vs IA',
     'home.playAIDesc': '1v1 ou 2v2 contra a IA',
     'home.playOnline': 'Jogar Online',
