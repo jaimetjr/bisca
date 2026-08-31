@@ -132,7 +132,7 @@ export default function HomeScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 {isGuest && (
-                    <View style={styles.guestBanner}>
+                    <View style={styles.guestBanner} testID="guest-banner">
                         <View style={styles.guestBannerRow}>
                             <MaterialCommunityIcons name="alert-circle-outline" size={16} color={Colors.gold} />
                             <Text style={styles.guestBannerText}>{t('home.guestBanner')}</Text>
