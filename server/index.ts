@@ -16,6 +16,8 @@ import {
   APP_ADS_TXT,
 } from "./lib/legal-content";
 import {
+  GOOGLE_VERIFICATION_BODY,
+  GOOGLE_VERIFICATION_PATH,
   ROBOTS_TXT,
   landingHtml,
   pickLandingLanguage,
@@ -217,6 +219,12 @@ function setupLegalPages(app: express.Application) {
     res.type("html").send(ACCOUNT_DELETION_HTML),
   );
   app.get("/app-ads.txt", (_req, res) => res.type("text/plain").send(APP_ADS_TXT));
+
+  // Google Search Console ownership proof. Served from a bundled constant so it
+  // survives the runtime image, which ships only server_dist.
+  app.get(GOOGLE_VERIFICATION_PATH, (_req, res) =>
+    res.type("text/html").send(GOOGLE_VERIFICATION_BODY),
+  );
 }
 
 (async () => {

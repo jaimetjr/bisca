@@ -319,6 +319,22 @@ ${LANDING_LANGUAGES.map((l) => `        <a href="/?hl=${l}" hreflang="${COPY[l].
 `;
 }
 
+/**
+ * Google Search Console ownership proof.
+ *
+ * Search Console offers a file to host or a <meta> tag; the file is used here
+ * because it does not depend on the landing page markup staying put, matching
+ * how app-ads.txt is already served. The token is public by design — it only
+ * proves control of this origin.
+ *
+ * Bundled rather than committed as a real file for the usual reason: the
+ * runtime image ships only server_dist, so a googleXXXX.html sitting in the
+ * repo would 404 in production and verification would fail.
+ */
+export const GOOGLE_VERIFICATION_PATH = '/googledbcb1c80d782bb93.html';
+export const GOOGLE_VERIFICATION_BODY =
+  'google-site-verification: googledbcb1c80d782bb93.html\n';
+
 export const ROBOTS_TXT = (baseUrl: string): string =>
   `User-agent: *
 Allow: /
