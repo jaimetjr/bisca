@@ -11,7 +11,8 @@ import { eq, desc, sql } from 'drizzle-orm';
 import { hashPassword, verifyPassword, signAuthToken, verifyAuthToken } from './lib/auth';
 import { issueCode, verifyCode } from './lib/auth-codes';
 import { sendVerificationCode, sendPasswordResetCode } from './lib/email';
-import { joinPageHtml } from './lib/join-page';
+import { joinPageHtml, roomGoneHtml, pickInviteLanguage } from './lib/join-page';
+import { getRoomStore } from './stores';
 import { createKeyedRateLimiter } from './lib/rate-limit';
 import {
   recordGameAndEvaluate,
@@ -644,13 +645,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     // Invite landing page for shared room links: clickable HTTPS URL that
     // opens the app when installed and offers the Play Store otherwise.
-    app.get("/join/:code", (req: Request, res: Response) => {
+    //
+    // The room is looked up before promising anything: an expired or finished
+    // room used to render a full "you're invited!" page, so the recipient only
+    // discovered it was dead after installing the app and typing the code.
+    app.get("/join/:code", async (req: Request, res: Response) => {
+      const lang = pickInviteLanguage(
+        req.header("accept-language"),
+        typeof req.query.hl === "string" ? req.query.hl : undefined,
+      );
+      // Language varies by request header, so shared caches must not hand one
+      // visitor's language to another.
+      res.setHeader("Vary", "Accept-Language");
+
       const raw = String(req.params.code ?? '');
       if (!/^[A-Za-z0-9]{4,6}$/.test(raw)) {
-        res.status(404).type('html').send('<!doctype html><meta charset="utf-8"><p>Sala não encontrada.</p>');
+        res.status(404).type('html').send(roomGoneHtml(lang));
         return;
       }
-      res.type('html').send(joinPageHtml(raw.toUpperCase()));
+
+      const code = raw.toUpperCase();
+      let room;
+      try {
+        room = await getRoomStore().get(code);
+      } catch (err) {
+        // A store outage must not turn a good invite into a dead end: fall
+        // through to the invite page and let the app report the real error.
+        log.error({ err, code }, 'invite page: room lookup failed');
+        res.type('html').send(joinPageHtml(code, lang));
+        return;
+      }
+
+      if (!room) {
+        res.status(404).type('html').send(roomGoneHtml(lang));
+        return;
+      }
+      res.type('html').send(joinPageHtml(code, lang));
     });
 
     const httpServer = createServer(app);
