@@ -4,6 +4,7 @@ import { createServer, type Server } from 'node:http';
 import { WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import { handleWebSocket, getPublicRooms } from './game-rooms';
+import { startHeartbeat } from './connections/heartbeat';
 import { db } from './db';
 import { gameHistory, users, userAchievements, userQuestProgress, authCodes } from '../shared/lib/schema';
 import { eq, desc, sql } from 'drizzle-orm';
@@ -704,6 +705,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           cb(false, 403, 'Forbidden origin');
         }
       },
+    });
+
+    // Keeps idle lobby sockets warm and reaps half-open ones.
+    startHeartbeat(wss);
+
+    wss.on('error', (err: Error) => {
+      log.warn({ msg: err.message }, 'websocket server error');
     });
 
     wss.on('connection', (ws, request: IncomingMessage) => {

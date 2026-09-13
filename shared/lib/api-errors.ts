@@ -55,6 +55,7 @@ const WS_CODE_KEYS: Record<string, string> = {
   INVALID_CARD: 'ws.invalidCard',
   MUST_FOLLOW_SUIT: 'ws.mustFollowSuit',
   HOST_LEFT: 'ws.hostLeft',
+  LOBBY_IDLE: 'ws.lobbyIdle',
   APP_OUTDATED: 'ws.appOutdated',
 };
 

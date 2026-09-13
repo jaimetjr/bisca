@@ -14,6 +14,9 @@ interface ScoreBoardProps {
   onExit: () => void;
   endReason?: 'normal' | 'forfeit';
   forfeitedBy?: string;
+  /** Seconds until this screen leaves on its own. */
+  autoLeaveIn?: number | null;
+  waitingForHost?: boolean;
 }
 
 /**
@@ -40,12 +43,12 @@ function Backdrop({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeitedBy }: ScoreBoardProps) {
+export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeitedBy, autoLeaveIn, waitingForHost }: ScoreBoardProps) {
   useLanguage();
   const teamMode = isTeamGame(players);
 
   if (teamMode) {
-    return <TeamScoreBoard players={players} myId={myId} onPlayAgain={onPlayAgain} onExit={onExit} endReason={endReason} forfeitedBy={forfeitedBy} />;
+    return <TeamScoreBoard players={players} myId={myId} onPlayAgain={onPlayAgain} onExit={onExit} endReason={endReason} forfeitedBy={forfeitedBy} autoLeaveIn={autoLeaveIn} waitingForHost={waitingForHost} />;
   }
 
   const scores = calculateScores(players);
@@ -96,7 +99,9 @@ export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReas
             testID="play-again-btn"
           >
             <MaterialCommunityIcons name="refresh" size={20} color={Colors.textDark} />
-            <Text style={styles.primaryButtonText}>{t('score.playAgain')}</Text>
+            <Text style={styles.primaryButtonText}>
+              {waitingForHost ? t('score.waitingForHost') : t('score.playAgain')}
+            </Text>
           </Pressable>
           <Pressable
             style={({ pressed }) => [styles.button, styles.secondaryButton, pressed && { opacity: 0.8 }]}
@@ -104,7 +109,11 @@ export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReas
             testID="exit-btn"
           >
             <MaterialCommunityIcons name="home" size={20} color={Colors.white} />
-            <Text style={styles.secondaryButtonText}>{t('score.menu')}</Text>
+            <Text style={styles.secondaryButtonText}>
+              {autoLeaveIn && autoLeaveIn > 0
+                ? t('score.menuIn', { seconds: autoLeaveIn })
+                : t('score.menu')}
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -112,7 +121,7 @@ export default function ScoreBoard({ players, myId, onPlayAgain, onExit, endReas
   );
 }
 
-function TeamScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeitedBy }: ScoreBoardProps) {
+function TeamScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeitedBy, autoLeaveIn, waitingForHost }: ScoreBoardProps) {
   useLanguage();
   const teamScores = getTeamScores(players);
   const isDraw = teamScores.length >= 2 && teamScores[0].score === teamScores[1].score;
@@ -172,7 +181,9 @@ function TeamScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeit
             testID="play-again-btn"
           >
             <MaterialCommunityIcons name="refresh" size={20} color={Colors.textDark} />
-            <Text style={styles.primaryButtonText}>{t('score.playAgain')}</Text>
+            <Text style={styles.primaryButtonText}>
+              {waitingForHost ? t('score.waitingForHost') : t('score.playAgain')}
+            </Text>
           </Pressable>
           <Pressable
             style={({ pressed }) => [styles.button, styles.secondaryButton, pressed && { opacity: 0.8 }]}
@@ -180,7 +191,11 @@ function TeamScoreBoard({ players, myId, onPlayAgain, onExit, endReason, forfeit
             testID="exit-btn"
           >
             <MaterialCommunityIcons name="home" size={20} color={Colors.white} />
-            <Text style={styles.secondaryButtonText}>{t('score.menu')}</Text>
+            <Text style={styles.secondaryButtonText}>
+              {autoLeaveIn && autoLeaveIn > 0
+                ? t('score.menuIn', { seconds: autoLeaveIn })
+                : t('score.menu')}
+            </Text>
           </Pressable>
         </View>
       </View>

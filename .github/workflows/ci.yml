@@ -32,3 +32,11 @@ jobs:
         env:
           RECONNECT_TOKEN_SECRET: ci-only-secret-not-used-in-production-deploys
           ALLOWED_ORIGINS: http://localhost:5000
+
+      # The AI difficulty ladder is skipped by default so it stays off the wall
+      # clock of every local run; CI is where it has to actually fire.
+      - name: Run slow tests
+        run: npm run test:slow
+        env:
+          RECONNECT_TOKEN_SECRET: ci-only-secret-not-used-in-production-deploys
+          ALLOWED_ORIGINS: http://localhost:5000

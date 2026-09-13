@@ -411,6 +411,13 @@ describe('chooseAICard — determinism', () => {
       chooseAICard(state, state.players[state.currentPlayerIndex].id, 'hard', {
         rng: mulberry32(2000),
         epsilon: 0,
+        // Freezing the wall clock is what makes this test the thing it claims to
+        // be. Left on the real Date.now() deadline the search stops at whatever
+        // depth the host happened to reach, so two picks under load can disagree
+        // about a card the seed had already settled — the same trap ai-ladder
+        // documents. Every other AI test freezes it; this one did not, and it was
+        // the only file that failed once vitest ran files in parallel.
+        nowMs: () => 0,
       })!.id;
     expect(pick()).toBe(pick());
     expect(pick()).toBe(pick());

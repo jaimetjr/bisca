@@ -7,14 +7,12 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     testTimeout: 10_000,
-    hookTimeout: 15_000,
+    // Generous because of --coverage: v8's instrumentation pushes the WebSocket
+    // suites' startTestServer() past 15s, and the beforeAll timing out took down
+    // ws-gameplay on one full coverage run in two. The hook is not slow, the
+    // instrumentation is.
+    hookTimeout: 30_000,
     setupFiles: ['tests/setup-env.ts'],
-    // Drizzle's pgTable mutates shared schema state on import; running test
-    // files in parallel within the same worker occasionally races and throws
-    // "Cannot read properties of undefined (reading 'config')". Serialising
-    // file execution removes the flake — files still run in one worker, just
-    // sequentially.
-    fileParallelism: false,
   },
   resolve: {
     alias: {

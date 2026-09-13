@@ -94,7 +94,16 @@ function duel(strong: AIDifficulty, weak: AIDifficulty, games: number): Duel {
   };
 }
 
-describe('difficulty ladder', () => {
+/**
+ * Gated because it is slow, not because it is optional: three duels of 24 fully
+ * searched games costs 43 seconds, and with vitest running files in parallel
+ * this one file is the entire suite's wall clock. It still runs on every push
+ * in CI, and on demand via `npm run test:slow` — the same gate style as the
+ * DATABASE_URL one in tests/integration/auth-code-expiry.db.test.ts.
+ */
+const describeSlow = process.env.RUN_SLOW_TESTS ? describe : describe.skip;
+
+describeSlow('difficulty ladder', () => {
   // 24 games per pairing keeps this near the existing tournament test's cost.
   // It is deterministic, so a fixed count is a fixed outcome, not a sample —
   // the thresholds below sit well clear of the observed values and exist to

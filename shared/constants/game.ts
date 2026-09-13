@@ -17,6 +17,22 @@ export const ROOM_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 export const AFK_TIMEOUT_MS = 120_000;         // 2 minutes — configurable
 export const AFK_WARNING_MS = 30_000;          // warning sent this many ms before kick
 export const ROOM_CLEANUP_AFTER_GAME_MS = 5 * 60 * 1000; // 5 minutes
+/** How long a waiting room is held open after its host's socket drops. */
+export const LOBBY_DISCONNECT_GRACE_MS = 120_000;
+/** How long a *full* waiting room sits before closing. Never armed while filling. */
+export const LOBBY_IDLE_TIMEOUT_MS = 180_000;
+/** How far ahead of the close everyone is warned. */
+export const LOBBY_IDLE_WARNING_MS = 30_000;
+/** How long a non-host sits on "room is gone" before returning to the list. */
+export const LOBBY_GONE_REDIRECT_SECONDS = 15;
+/** End-of-match screen timeout for non-hosts. The host is exempt. */
+export const MATCH_END_TIMEOUT_SECONDS = 30;
+/** Bound on "waiting for host": a host who walks away sends nothing. */
+export const REMATCH_WAIT_SECONDS = 60;
+/** Client's own liveness probe interval. Must stay under HEARTBEAT_INTERVAL_MS. */
+export const CLIENT_PING_INTERVAL_MS = 20_000;
+/** How long the client waits for a `pong` before declaring the socket dead. */
+export const CLIENT_PONG_TIMEOUT_MS = 5_000;
 
 // Game rules
 export const GAME_WIN_SCORE = 61;
