@@ -6,14 +6,17 @@ import { Player } from '@/shared/lib//types';
 import CardSprite from '@/components/CardSprite';
 import { useCardMetrics } from '@shared/hooks/useCardMetrics';
 import { toPersona } from '@shared/lib/brisca/opponents';
+import { t } from '@/shared/i18n';
 
 interface OpponentHandProps {
   player: Player;
   isCurrentTurn: boolean;
   isTeammate?: boolean;
+  /** Their connection dropped; not a loss. */
+  isAway?: boolean;
 }
 
-export default function OpponentHand({ player, isCurrentTurn, isTeammate }: OpponentHandProps) {
+export default function OpponentHand({ player, isCurrentTurn, isTeammate, isAway }: OpponentHandProps) {
   const metrics = useCardMetrics();
   // Offline bots carry a persona and get its own face; online players never do
   // and keep the generic icons this had before.
@@ -34,17 +37,18 @@ export default function OpponentHand({ player, isCurrentTurn, isTeammate }: Oppo
         styles.nameTag,
         isCurrentTurn && styles.activeNameTag,
         isTeammate && styles.teammateNameTag,
+        isAway && styles.awayNameTag,
       ]}>
         <MaterialCommunityIcons
-          name={icon as any}
+          name={isAway ? 'wifi-off' : (icon as any)}
           size={14}
-          color={iconColor}
+          color={isAway ? Colors.textSecondary : iconColor}
         />
         <Text style={[
           styles.name,
           isCurrentTurn && styles.activeName,
         ]} numberOfLines={1}>
-          {player.name}
+          {isAway ? t('game.opponentAway', { name: player.name }) : player.name}
         </Text>
       </View>
       {/* One overlapping horizontal fan on every seat. The left and right seats
@@ -72,6 +76,9 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     gap: 4,
+  },
+  awayNameTag: {
+    opacity: 0.6,
   },
   nameTag: {
     flexDirection: 'row',

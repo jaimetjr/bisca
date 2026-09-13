@@ -18,6 +18,11 @@ import type { ServerMessage } from '../../shared/lib/types/messages';
 
 vi.mock('../../server/db', () => ({ db: {} }));
 
+// A disconnected host holds its room for 2 minutes in production. Shortened
+// here so the window can be watched open and shut inside vitest's timeout.
+const GRACE_MS = 400;
+process.env.LOBBY_GRACE_MS = String(GRACE_MS);
+
 let server: Server;
 let wsUrl: string;
 
@@ -134,15 +139,20 @@ it('team scores sum per-player scores correctly', () => {
   expect(scores.find(t => t.team === 1)?.score).toBe(55);
 });
 
-// ─── 8. Room deleted when host leaves lobby ───────────────────────────────────
+// ─── 8. Room deleted when host leaves lobby and does not return ───────────────
 
-it('HOST_LEFT sent to remaining players when host disconnects', async () => {
+it('HOST_LEFT sent to remaining players after the host grace window', async () => {
   const { ws: host, roomCode } = await createRoom(wsUrl, 'Host');
   const { ws: joiner } = await joinRoom(wsUrl, roomCode, 'Joiner');
 
   const errPromise = waitForMessage(joiner, 'error') as Promise<Extract<ServerMessage, { type: 'error' }>>;
+  const closedAt = Date.now();
   host.close();
   const err = await errPromise;
+
   expect(err.code).toBe('HOST_LEFT');
+  // The room outlives a brief host disconnect on purpose — see
+  // LOBBY_DISCONNECT_GRACE_MS and tests/integration/ws-lobby-resilience.
+  expect(Date.now() - closedAt).toBeGreaterThanOrEqual(GRACE_MS);
   joiner.close();
 });

@@ -9,6 +9,11 @@ import type { ServerMessage } from '../../shared/lib/types/messages';
 
 vi.mock('../../server/db', () => ({ db: {} }));
 
+// A disconnected host holds its room for 2 minutes in production. Shortened
+// here so the window can be watched open and shut inside vitest's timeout.
+const GRACE_MS = 400;
+process.env.LOBBY_GRACE_MS = String(GRACE_MS);
+
 let server: Server;
 let wsUrl: string;
 
@@ -139,14 +144,19 @@ describe('switch_team', () => {
 });
 
 describe('disconnect handling', () => {
-  it('HOST_LEFT: remaining players notified when host disconnects', async () => {
+  it('HOST_LEFT: remaining players notified once the host grace window expires', async () => {
     const { ws: host, roomCode } = await createRoom(wsUrl, 'Host');
     const { ws: joiner } = await joinRoom(wsUrl, roomCode, 'Joiner');
 
     const errPromise = waitForMessage(joiner, 'error') as Promise<Extract<ServerMessage, { type: 'error' }>>;
+    const closedAt = Date.now();
     host.close();
     const err = await errPromise;
+
     expect(err.code).toBe('HOST_LEFT');
+    // Not immediately: the room is held first, so a host who backgrounded the
+    // app to share the code can come back to it. See ws-lobby-resilience.
+    expect(Date.now() - closedAt).toBeGreaterThanOrEqual(GRACE_MS);
     joiner.close();
   });
 

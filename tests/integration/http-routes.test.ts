@@ -151,14 +151,43 @@ describe('GET /api/leaderboard (public)', () => {
 
 describe('GET /join/:code (invite landing page)', () => {
   it('renders the invite page with code, deep link, and store link', async () => {
-    const res = await request(server).get('/join/wdak7');
-    expect(res.status).toBe(200);
+    const { ws, roomCode } = await createRoom(wsUrl);
+    try {
+      const res = await request(server).get(`/join/${roomCode.toLowerCase()}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/text\/html/);
+      // Code is normalized to uppercase and shown for manual entry
+      expect(res.text).toContain(roomCode);
+      // "Open in app" deep link (expo triple-slash form)
+      expect(res.text).toContain(`bisca:///join?code=${roomCode}`);
+      // "Get the app" store link
+      expect(res.text).toContain('play.google.com/store/apps/details?id=com.jaimetjr.bisca');
+    } finally {
+      ws.close();
+    }
+  });
+
+  it('serves the page in the language the recipient reads', async () => {
+    const { ws, roomCode } = await createRoom(wsUrl);
+    try {
+      const res = await request(server)
+        .get(`/join/${roomCode}`)
+        .set('Accept-Language', 'it-IT,it;q=0.9');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('lang="it"');
+      expect(res.headers['vary']).toMatch(/Accept-Language/i);
+    } finally {
+      ws.close();
+    }
+  });
+
+  it('does not promise an invite for a room that does not exist', async () => {
+    const res = await request(server).get('/join/ZZZZZ');
+    expect(res.status).toBe(404);
     expect(res.headers['content-type']).toMatch(/text\/html/);
-    // Code is normalized to uppercase and shown for manual entry
-    expect(res.text).toContain('WDAK7');
-    // "Open in app" deep link (expo triple-slash form)
-    expect(res.text).toContain('bisca:///join?code=WDAK7');
-    // "Get the app" store link
+    // Nothing to open, so no deep link is offered
+    expect(res.text).not.toContain('bisca:///join');
+    // But installing the app is still worth offering
     expect(res.text).toContain('play.google.com/store/apps/details?id=com.jaimetjr.bisca');
   });
 

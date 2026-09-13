@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:slow": "cross-env RUN_SLOW_TESTS=1 vitest run tests/unit/ai-ladder.test.ts",
     "test:load": "npx artillery run tests/load/ws-scenario.yml",
     "android": "expo run:android",
     "ios": "expo run:ios"

@@ -15,7 +15,12 @@ export async function startTestServer(): Promise<{ server: Server; port: number;
   return { server, port, wsUrl: `ws://127.0.0.1:${port}` };
 }
 
-export function closeServer(server: Server): Promise<void> {
+export function closeServer(server: Server | undefined): Promise<void> {
+  // A beforeAll that failed leaves this undefined, and dereferencing it throws a
+  // TypeError that lands as a second failure and buries the first — which is
+  // precisely how a hook timeout under coverage surfaced as "cannot read
+  // properties of undefined (reading 'closeAllConnections')".
+  if (!server) return Promise.resolve();
   return new Promise(resolve => {
     // Force-close any lingering connections (Node ≥18.2)
     if (typeof (server as any).closeAllConnections === 'function') {

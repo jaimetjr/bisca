@@ -11,6 +11,24 @@ import { TRICK_DISPLAY_MS } from '../../shared/constants/game';
 
 vi.mock('../../server/db', () => ({ db: {} }));
 
+/**
+ * The full-game test at the bottom plays every trick against the real server,
+ * and game-rooms waits TRICK_DISPLAY_MS before advancing each one — twenty
+ * tricks at 1.5s was thirty seconds of this file doing nothing but sleeping.
+ * Shrinking the constant keeps the timer path itself under test: the timeout
+ * still fires, the state still moves through trickComplete, and the assertion
+ * on the 120-point total is unchanged. Only the human-scale pause goes.
+ *
+ * The spread keeps AFK_TIMEOUT_MS, ROOM_EXPIRY_MS and the rest at their real
+ * values — the module is plain constants with no imports, so there is nothing
+ * else to preserve. helpers.ts imports registerRoutes dynamically, so
+ * game-rooms picks this up the same way it picks up the db mock above.
+ */
+vi.mock('../../shared/constants/game', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../shared/constants/game')>()),
+  TRICK_DISPLAY_MS: 25,
+}));
+
 let server: Server;
 let wsUrl: string;
 

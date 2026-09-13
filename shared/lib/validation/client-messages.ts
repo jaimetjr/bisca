@@ -75,6 +75,23 @@ export const leaveGameSchema = z.object({
   type: z.literal('leave_game'),
 });
 
+export const pingSchema = z.object({
+  type: z.literal('ping'),
+});
+
+export const stayInLobbySchema = z.object({
+  type: z.literal('stay_in_lobby'),
+});
+
+export const rematchSchema = z.object({
+  type: z.literal('rematch'),
+  playerName: playerName.optional(),
+});
+
+export const stillHereSchema = z.object({
+  type: z.literal('still_here'),
+});
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   createRoomSchema,
   joinRoomSchema,
@@ -83,6 +100,10 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   playCardSchema,
   reconnectSchema,
   leaveGameSchema,
+  pingSchema,
+  stayInLobbySchema,
+  rematchSchema,
+  stillHereSchema,
 ]);
 
 export type ValidatedClientMessage = z.infer<typeof clientMessageSchema>;

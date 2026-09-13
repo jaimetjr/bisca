@@ -7,6 +7,8 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/shared/constants/colors';
 import {
+  MATCH_END_TIMEOUT_SECONDS,
+  REMATCH_WAIT_SECONDS,
   TRICK_DISPLAY_MS,
   AI_DELAY_MIN_MS,
   AI_DELAY_MAX_MS,
@@ -32,7 +34,9 @@ import { ServerMessage, ClientMessage } from '@/shared/lib/types/messages';
 import { wsErrorText } from '@/shared/lib/api-errors';
 import { getAppVersion } from '@/shared/lib/app-version';
 import { useSettings } from '@/shared/hooks/useSettings';
-import { takeGameWs } from '@/shared/ws-store';
+import { takeGameWs, storeGameWs } from '@/shared/ws-store';
+import { loadRoomSession, clearRoomSession, saveRoomSession } from '@/shared/lib/room-session';
+import { useSocketLiveness } from '@shared/hooks/useSocketLiveness';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
@@ -106,6 +110,7 @@ export default function GameScreen() {
     myPlayerId?: string;
     roomCode?: string;
     practice?: string;
+    isHost?: string;
   }>();
   const insets = useSafeAreaInsets();
   const topPadding = Platform.OS === 'web' ? 67 : insets.top;
@@ -164,6 +169,13 @@ export default function GameScreen() {
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTokenRef = useRef('');
+  const [isHost, setIsHost] = useState(params.isHost === '1');
+  const [autoLeaveIn, setAutoLeaveIn] = useState<number | null>(null);
+  const [waitingForHost, setWaitingForHost] = useState(false);
+  const [awayIds, setAwayIds] = useState<string[]>([]);
+  const rematchHandledRef = useRef(false);
+  // Declared here: the handlers below bind before enterRematchLobby exists.
+  const enterRematchLobbyRef = useRef<(d: Extract<ServerMessage, { type: 'room_joined' }>) => void>(() => {});
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const afkCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -252,6 +264,23 @@ export default function GameScreen() {
         try {
           const data = JSON.parse(event.data) as ServerMessage;
           switch (data.type) {
+            case 'pong':
+              notePongRef.current();
+              break;
+            case 'rematch_ready':
+              // Claim a seat unprompted, so tap order stops mattering.
+              setAutoLeaveIn(null);
+              setWaitingForHost(true);
+              sendWsMessage({ type: 'rematch', playerName });
+              break;
+            case 'room_joined':
+              enterRematchLobbyRef.current(data);
+              break;
+            case 'presence':
+              setAwayIds(prev => data.connected
+                ? prev.filter(id => id !== data.playerId)
+                : prev.includes(data.playerId) ? prev : [...prev, data.playerId]);
+              break;
             case 'game_update':
             case 'reconnected':
               setGameState(data.gameState);
@@ -261,7 +290,10 @@ export default function GameScreen() {
               if (afkCountdownRef.current) { clearInterval(afkCountdownRef.current); afkCountdownRef.current = null; }
               setShowAfkWarning(false);
               break;
-            case 'afk_warning':
+            case 'afk_warning': {
+              const forMe = !data.playerId || !myIdRef.current || data.playerId === myIdRef.current;
+              // Addressed to the other player: never render it here.
+              if (!forMe) break;
               setAfkSecondsLeft(data.secondsLeft);
               setShowAfkWarning(true);
               if (afkCountdownRef.current) clearInterval(afkCountdownRef.current);
@@ -276,6 +308,7 @@ export default function GameScreen() {
                 });
               }, 1000);
               break;
+            }
             case 'error':
               setErrorMsg(wsErrorText(data.code, data.message));
               break;
@@ -312,19 +345,91 @@ export default function GameScreen() {
     }, delay);
   }, [connectOnlineWebSocket]);
 
+  /** Hand the live socket to the lobby rather than closing it. */
+  // Only non-hosts get a clock; the host is the one who can rebuild the room.
+  useEffect(() => {
+    if (!isOnline || gameState?.phase !== 'gameOver' || rematchHandledRef.current) return;
+    // Once a rematch is requested, the wait for a reply gets its own bound.
+    if (isHost && !waitingForHost) return;
+    let left = waitingForHost ? REMATCH_WAIT_SECONDS : MATCH_END_TIMEOUT_SECONDS;
+    setAutoLeaveIn(left);
+    const id = setInterval(() => {
+      left -= 1;
+      setAutoLeaveIn(left);
+      if (left <= 0) {
+        clearInterval(id);
+        void clearRoomSession();
+        router.replace({ pathname: '/lobby-browser', params: { playerName } });
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isOnline, gameState?.phase, isHost, waitingForHost, playerName]);
+
+  const enterRematchLobby = useCallback(async (data: Extract<ServerMessage, { type: 'room_joined' }>) => {
+    if (rematchHandledRef.current) return;
+    rematchHandledRef.current = true;
+    const ws = wsRef.current;
+    await saveRoomSession({
+      roomCode: data.roomCode,
+      playerId: data.playerId,
+      reconnectToken: data.reconnectToken,
+      playerName,
+      maxPlayers: data.maxPlayers,
+      isHost: data.hostId ? data.hostId === data.playerId : false,
+    });
+    if (ws) {
+      ws.onopen = null; ws.onmessage = null; ws.onerror = null; ws.onclose = null;
+      storeGameWs(ws, data.playerId, data.reconnectToken);
+      wsRef.current = null;
+    }
+    router.replace({
+      pathname: '/online-lobby',
+      params: {
+        action: 'rematch',
+        playerName,
+        roomCode: data.roomCode,
+        playerCount: String(data.maxPlayers),
+        lobbyState: JSON.stringify(data),
+      },
+    });
+  }, [playerName]);
+  enterRematchLobbyRef.current = enterRematchLobby;
+
+  const { notePong } = useSocketLiveness({
+    getSocket: () => wsRef.current,
+    onDead: () => {
+      const ws = wsRef.current;
+      if (ws) { try { ws.close(); } catch { /* already gone */ } }
+      else scheduleReconnect(myIdRef.current);
+    },
+    enabled: isOnline,
+  });
+  const notePongRef = useRef(notePong);
+  notePongRef.current = notePong;
+
   useEffect(() => {
     if (isOnline && params.initialState) {
-      try {
-        const state = JSON.parse(params.initialState) as GameState;
-        const pid = params.myPlayerId || '';
-        setMyId(pid);
-        setGameState(state);
-        const stored = takeGameWs();
-        if (stored?.reconnectToken) reconnectTokenRef.current = stored.reconnectToken;
-        connectOnlineWebSocket(pid, stored?.ws);
-      } catch {
-        router.replace('/');
-      }
+      void (async () => {
+        try {
+          const state = JSON.parse(params.initialState!) as GameState;
+          const pid = params.myPlayerId || '';
+          setMyId(pid);
+          myIdRef.current = pid;
+          setGameState(state);
+          const stored = takeGameWs();
+          if (stored?.reconnectToken) reconnectTokenRef.current = stored.reconnectToken;
+          if (!stored?.reconnectToken || !params.isHost) {
+            const saved = await loadRoomSession();
+            if (saved?.playerId === pid) {
+              if (!stored?.reconnectToken) reconnectTokenRef.current = saved.reconnectToken;
+              if (!params.isHost) setIsHost(saved.isHost);
+            }
+          }
+          connectOnlineWebSocket(pid, stored?.ws);
+        } catch {
+          router.replace('/');
+        }
+      })();
     } else {
       initGame();
     }
@@ -561,11 +666,13 @@ export default function GameScreen() {
       <View style={styles.topBar}>
         <Pressable style={styles.backBtn} onPress={() => {
           const leave = () => {
+            if (isOnline) void clearRoomSession();
             if (wsRef.current) {
               if (isOnline && gameState.phase !== 'gameOver') {
                 sendWsMessage({ type: 'leave_game' });
               }
               wsRef.current.onclose = null;
+              wsRef.current.onerror = null;
               wsRef.current.close();
             }
             router.replace('/');
@@ -651,6 +758,7 @@ export default function GameScreen() {
             player={opp}
             isCurrentTurn={gameState.players[gameState.currentPlayerIndex]?.id === opp.id}
             isTeammate={teamMode && opp.team === humanPlayer.team}
+            isAway={awayIds.includes(opp.id)}
           />
         ))}
       </View>
@@ -728,19 +836,21 @@ export default function GameScreen() {
           myId={isOnline ? myId : undefined}
           endReason={gameState.endReason}
           forfeitedBy={gameState.forfeitedBy}
+          autoLeaveIn={autoLeaveIn}
+          waitingForHost={waitingForHost}
           onPlayAgain={() => {
-            showAd().then(() => {
-              if (isOnline) {
-                if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
-                router.replace('/');
-              } else {
-                initGame();
-              }
-            });
+            if (isOnline) {
+                setAutoLeaveIn(null);
+              setWaitingForHost(true);
+              sendWsMessage({ type: 'rematch', playerName });
+              return;
+            }
+            showAd().then(() => initGame());
           }}
           onExit={() => {
             showAd().then(() => {
-              if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.close(); }
+              if (isOnline) void clearRoomSession();
+              if (wsRef.current) { wsRef.current.onclose = null; wsRef.current.onerror = null; wsRef.current.close(); }
               router.replace('/');
             });
           }}
@@ -758,7 +868,15 @@ export default function GameScreen() {
             <Text style={styles.afkMessage}>{t('game.afkWarningMessage')}</Text>
             <Pressable
               style={({ pressed }) => [styles.afkBtn, pressed && { opacity: 0.8 }]}
-              onPress={() => setShowAfkWarning(false)}
+              onPress={() => {
+                // Tell the server, not just the screen.
+                if (isOnline) sendWsMessage({ type: 'still_here' });
+                if (afkCountdownRef.current) {
+                  clearInterval(afkCountdownRef.current);
+                  afkCountdownRef.current = null;
+                }
+                setShowAfkWarning(false);
+              }}
             >
               <Text style={styles.afkBtnText}>{t('game.afkWarningAction')}</Text>
             </Pressable>
