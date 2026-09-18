@@ -9,7 +9,7 @@
 import { MIN_SIGNUP_AGE } from '../../shared/constants/policy';
 
 const APP_NAME = 'Brisca';
-const CONTACT_EMAIL = 'jaime.tasca.jr@gmail.com';
+const CONTACT_EMAIL = 'contact@biscagame.com';
 const LAST_UPDATED = 'July 25, 2026';
 
 // AdMob publisher id (from the ca-app-pub-9412542080032324/* ad unit IDs).

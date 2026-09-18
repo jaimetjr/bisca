@@ -3,6 +3,21 @@ name: Android Build (EAS)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'server/**'
+      - 'server_dist/**'
+      - 'docs/**'
+      - 'store/**'
+      - 'tests/**'
+      - 'mocks/**'
+      - 'scripts/**'
+      - '**/*.md'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'drizzle.config.ts'
+      - 'vitest.config.ts'
+      - 'eslint.config.js'
+      - '.env.example'
 
 jobs:
   build:
