@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { Asset } from 'expo-asset';
 import { View, Platform } from 'react-native';
+import DeviceInfo from 'react-native-device-info';
 import { QueryClientProvider } from '@tanstack/react-query';
 import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
 import * as Sentry from '@sentry/react-native';
@@ -18,7 +19,8 @@ import { EntitlementProvider } from '@shared/hooks/useEntitlement';
 import { RewardsProvider } from '@shared/hooks/useRewards';
 import { consumePendingInvite } from '@/shared/lib/pending-invite';
 import { consumePendingAuthMode } from '@/shared/lib/auth-nav-intent';
-import { ALL_CARD_ASSETS } from '@/components/CardSprite';
+import { shouldPreloadFullDeck } from '@/shared/lib/device-memory';
+import { ALL_CARD_ASSETS, CARD_BACK_IMAGES } from '@/components/CardSprite';
 
 // Crash/error reporting. The DSN is a public identifier (safe to embed) and is
 // only set for EAS preview/production builds via eas.json — `enabled` keeps dev
@@ -139,8 +141,31 @@ function RootLayout() {
   // card at a time during the first hand. Fire-and-forget on purpose: nothing
   // renders behind it and a failure just means the old lazy path, so it must
   // never block the tree or surface an error.
+  //
+  // A production device (128MB Android heap class, 7.6GB RAM otherwise — total
+  // RAM doesn't predict this, the per-app heap ceiling does) hit a fatal OOM
+  // in `readBundle` shortly after boot. Deliberate reproduction attempts on a
+  // pinned-128MB-heap emulator (release build, full gameplay, repeated
+  // background/kill/restore cycles) did not reproduce it either before or
+  // after this change, so the exact trigger is unconfirmed. This gate is a
+  // real, verified reduction in the preload's memory footprint on constrained
+  // devices regardless: generous heap → warm everything as before; constrained
+  // heap → only warm the backs (always on screen — every face-down opponent
+  // card, the stock pile), and let faces fall back to decoding on demand, same
+  // as the old lazy path.
   useEffect(() => {
-    Asset.loadAsync(ALL_CARD_ASSETS).catch(() => {});
+    (async () => {
+      let assets = ALL_CARD_ASSETS;
+      if (Platform.OS === 'android') {
+        const maxMemoryMB = await DeviceInfo.getMaxMemory()
+          .then((bytes) => bytes / (1024 * 1024))
+          .catch(() => null);
+        if (!shouldPreloadFullDeck(maxMemoryMB)) {
+          assets = Object.values(CARD_BACK_IMAGES);
+        }
+      }
+      Asset.loadAsync(assets).catch(() => {});
+    })();
   }, []);
 
   if (!fontsLoaded) {

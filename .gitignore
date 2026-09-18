@@ -50,3 +50,6 @@ CLAUDE.md
 
 # design specs — mantidos localmente, fora do repositório remoto
 docs/superpowers/specs/
+
+# local-only store assets
+store/instagram/
