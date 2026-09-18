@@ -14,6 +14,12 @@
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.jaimetjr.bisca';
 const CONTACT_EMAIL = 'contact@biscagame.com';
 
+// Fixed, not derived from the request host: the app's Railway hostname serves
+// these same pages and cannot redirect (installed builds reach the API and the
+// WebSocket through it), so every crawlable URL points here to keep Google from
+// splitting the site across two hostnames.
+const SITE_ORIGIN = 'https://biscagame.com';
+
 const BG = '#1a472a';
 const BG_DARK = '#0f2d1a';
 const GOLD = '#D4A843';
@@ -206,12 +212,12 @@ function esc(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export function landingHtml(lang: LandingLanguage, baseUrl: string): string {
+export function landingHtml(lang: LandingLanguage): string {
   const c = COPY[lang];
 
   const alternates = LANDING_LANGUAGES.map(
     (l) =>
-      `  <link rel="alternate" hreflang="${COPY[l].htmlLang}" href="${esc(baseUrl)}/?hl=${l}" />`,
+      `  <link rel="alternate" hreflang="${COPY[l].htmlLang}" href="${esc(SITE_ORIGIN)}/?hl=${l}" />`,
   ).join('\n');
 
   // Describes the Android app itself, so search engines can associate this page
@@ -235,13 +241,13 @@ export function landingHtml(lang: LandingLanguage, baseUrl: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${esc(c.title)}</title>
   <meta name="description" content="${esc(c.description)}" />
-  <link rel="canonical" href="${esc(baseUrl)}/?hl=${lang}" />
+  <link rel="canonical" href="${esc(SITE_ORIGIN)}/?hl=${lang}" />
 ${alternates}
-  <link rel="alternate" hreflang="x-default" href="${esc(baseUrl)}/" />
+  <link rel="alternate" hreflang="x-default" href="${esc(SITE_ORIGIN)}/" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="${esc(c.title)}" />
   <meta property="og:description" content="${esc(c.description)}" />
-  <meta property="og:url" content="${esc(baseUrl)}/" />
+  <meta property="og:url" content="${esc(SITE_ORIGIN)}/" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="${esc(c.title)}" />
   <meta name="twitter:description" content="${esc(c.description)}" />
@@ -335,20 +341,20 @@ export const GOOGLE_VERIFICATION_PATH = '/googledbcb1c80d782bb93.html';
 export const GOOGLE_VERIFICATION_BODY =
   'google-site-verification: googledbcb1c80d782bb93.html\n';
 
-export const ROBOTS_TXT = (baseUrl: string): string =>
+export const ROBOTS_TXT = (): string =>
   `User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /join/
 
-Sitemap: ${baseUrl}/sitemap.xml
+Sitemap: ${SITE_ORIGIN}/sitemap.xml
 `;
 
-export function sitemapXml(baseUrl: string): string {
+export function sitemapXml(): string {
   const urls = [
-    ...LANDING_LANGUAGES.map((l) => `${baseUrl}/?hl=${l}`),
-    `${baseUrl}/privacy`,
-    `${baseUrl}/terms`,
+    ...LANDING_LANGUAGES.map((l) => `${SITE_ORIGIN}/?hl=${l}`),
+    `${SITE_ORIGIN}/privacy`,
+    `${SITE_ORIGIN}/terms`,
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

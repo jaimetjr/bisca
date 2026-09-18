@@ -475,12 +475,8 @@ AI 또는 온라인으로 브리스카를 즐기세요. 1v1과 2v2, 무료 및 �
 
 ## Contact
 Email: contact@biscagame.com
-Website: https://bisca-production.up.railway.app
-Privacy policy: https://bisca-production.up.railway.app/privacy
-
-> **The website URL above currently serves an Expo Go developer stub** ("Open this app on
-> your device using Expo Go"), not a real page — see `server/index.ts`, which intercepts `/`.
-> Fix that before pointing more store traffic at it.
+Website: https://biscagame.com
+Privacy policy: https://biscagame.com/privacy
 
 ## Assets checklist
 - App icon: store/icon-512.png (512×512, exported from the 1024 assets/images/icon.png source) ✓
