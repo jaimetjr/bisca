@@ -38,7 +38,7 @@ interface Copy {
 }
 
 const COPY: Record<InviteLanguage, Copy> = {
-  pt: {
+  'pt-BR': {
     title: (code) => `Bisca — convite para a sala ${code}`,
     heading: 'Uma partida de Bisca espera por você!',
     codeLabel: 'Código da sala:',
@@ -49,6 +49,18 @@ const COPY: Record<InviteLanguage, Copy> = {
     goneHeading: 'Esta sala não existe mais',
     goneBody:
       'O convite expirou ou a partida já terminou. Peça um novo link ao seu amigo — ou instale o app e crie a sua própria sala.',
+  },
+  'pt-PT': {
+    title: (code) => `Bisca — convite para a sala ${code}`,
+    heading: 'Está à tua espera uma partida de Bisca!',
+    codeLabel: 'Código da sala:',
+    hint: 'Se a ligação não abrir a app, introduz o código no ecrã "Jogar Online → Entrar".',
+    openApp: 'Abrir na app',
+    getApp: 'Descarregar a app',
+    goneTitle: 'Bisca — sala não encontrada',
+    goneHeading: 'Esta sala já não existe',
+    goneBody:
+      'O convite expirou ou a partida já terminou. Pede um novo link ao teu amigo — ou instala a app e cria a tua própria sala.',
   },
   es: {
     title: (code) => `Brisca — invitación a la sala ${code}`,

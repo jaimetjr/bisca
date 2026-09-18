@@ -123,16 +123,6 @@ function serveExpoManifest(platform: string, res: Response) {
   res.send(manifest);
 }
 
-/**
- * Public origin of this deployment, honouring the proxy headers Railway sets.
- * Used for canonical/hreflang URLs and the sitemap, which must be absolute.
- */
-function publicBaseUrl(req: Request): string {
-  const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
-  const host = req.header("x-forwarded-host") || req.get("host");
-  return `${protocol}://${host}`;
-}
-
 function serveLandingPage({ req, res }: { req: Request; res: Response }) {
   const lang = pickLandingLanguage(
     req.header("accept-language"),
@@ -145,7 +135,7 @@ function serveLandingPage({ req, res }: { req: Request; res: Response }) {
   // Language depends on the request header, so shared caches must not serve
   // one visitor's language to another.
   res.setHeader("Vary", "Accept-Language");
-  res.status(200).send(landingHtml(lang, publicBaseUrl(req)));
+  res.status(200).send(landingHtml(lang));
 }
 
 function configureExpoAndLanding(app: express.Application) {
@@ -154,11 +144,11 @@ function configureExpoAndLanding(app: express.Application) {
   // Crawler directives. These sit ahead of the `/` handler so they are never
   // shadowed by it, and are generated rather than read from disk for the same
   // reason as the landing page itself.
-  app.get("/robots.txt", (req: Request, res: Response) =>
-    res.type("text/plain").send(ROBOTS_TXT(publicBaseUrl(req))),
+  app.get("/robots.txt", (_req: Request, res: Response) =>
+    res.type("text/plain").send(ROBOTS_TXT()),
   );
-  app.get("/sitemap.xml", (req: Request, res: Response) =>
-    res.type("application/xml").send(sitemapXml(publicBaseUrl(req))),
+  app.get("/sitemap.xml", (_req: Request, res: Response) =>
+    res.type("application/xml").send(sitemapXml()),
   );
 
   app.use((req: Request, res: Response, next: NextFunction) => {
