@@ -25,7 +25,7 @@ const BG_DARK = '#0f2d1a';
 const GOLD = '#D4A843';
 const GOLD_LIGHT = '#E8C96A';
 
-export const LANDING_LANGUAGES = ['pt', 'es', 'it', 'en', 'fr', 'de'] as const;
+export const LANDING_LANGUAGES = ['pt-BR', 'pt-PT', 'es', 'it', 'en', 'fr', 'de'] as const;
 export type LandingLanguage = (typeof LANDING_LANGUAGES)[number];
 export const DEFAULT_LANDING_LANGUAGE: LandingLanguage = 'en';
 
@@ -45,8 +45,30 @@ interface Copy {
 }
 
 const COPY: Record<LandingLanguage, Copy> = {
-  pt: {
-    htmlLang: 'pt',
+  'pt-BR': {
+    htmlLang: 'pt-BR',
+    title: 'Bisca — Jogar Bisca Online Grátis',
+    description:
+      'Jogue Bisca grátis: contra o computador ou online com amigos, 1v1 e 2v2. O clássico jogo de cartas de vazas com baralho de 40 cartas, no Android.',
+    heading: 'Bisca',
+    tagline: 'O clássico jogo de cartas de vazas — contra a IA ou online, 1v1 e 2v2.',
+    cta: 'Baixar no Google Play',
+    featuresHeading: 'Recursos',
+    features: [
+      'Jogar contra a IA, com três níveis de dificuldade',
+      'Multijogador online em tempo real, 1v1 e 2v2, com código de sala',
+      'Tutorial integrado que ensina as regras em segundos',
+      'Modo offline completo — sem precisar de conexão',
+      'Estatísticas, missões diárias e troféus',
+      'Disponível em 12 idiomas',
+    ],
+    rulesHeading: 'Como jogar',
+    rules:
+      'Cada jogador recebe 3 cartas e o naipe de uma delas fica como trunfo durante toda a partida. O trunfo mais alto ganha a vaza; sem trunfo, ganha a carta mais alta do naipe que saiu. O Ás vale 11 pontos, o Três vale 10, o Rei 4, o Cavalo 3 e o Valete 2 — são 120 pontos no baralho, e 61 bastam para ganhar.',
+    footerNote: 'Grátis, com anúncios.',
+  },
+  'pt-PT': {
+    htmlLang: 'pt-PT',
     title: 'Bisca — Jogar Bisca Online Grátis',
     description:
       'Joga à Bisca grátis: contra o computador ou online com amigos, 1v1 e 2v2. O clássico jogo de cartas de vazas com baralho de 40 cartas, no Android.',
@@ -179,26 +201,46 @@ const COPY: Record<LandingLanguage, Copy> = {
   },
 };
 
-function isLandingLanguage(value: string): value is LandingLanguage {
-  return (LANDING_LANGUAGES as readonly string[]).includes(value);
+/**
+ * A tag carrying no region, or one whose region has no page of its own
+ * (`pt-AO`), resolves through here. Browsers effectively always send a region
+ * for Portuguese, so a bare `pt` is rare enough that either choice is
+ * defensible; Portugal wins because it is the market this page targets.
+ */
+const REGIONLESS_FALLBACKS: Record<string, LandingLanguage> = { pt: 'pt-PT' };
+
+/** Case-insensitive, so `?hl=pt-br` resolves the same as `?hl=pt-BR`. */
+function matchLandingLanguage(tag: string): LandingLanguage | undefined {
+  const normalized = tag.trim().toLowerCase();
+  if (!normalized) return undefined;
+
+  const exact = LANDING_LANGUAGES.find((l) => l.toLowerCase() === normalized);
+  if (exact) return exact;
+
+  const primary = normalized.split('-')[0];
+  return (
+    LANDING_LANGUAGES.find((l) => l.toLowerCase() === primary) ??
+    REGIONLESS_FALLBACKS[primary]
+  );
 }
 
 /**
  * Chooses the page language from an explicit `?hl=` override, falling back to
- * the browser's `Accept-Language`, then English. Only the primary subtag is
- * considered — `pt-BR` and `pt-PT` share one marketing page.
+ * the browser's `Accept-Language`, then English. Region is honoured where a
+ * page exists for it — `pt-BR` and `pt-PT` are separate pages — and otherwise
+ * collapses to the primary subtag, so `es-MX` still reads the Spanish page.
  */
 export function pickLandingLanguage(
   acceptLanguage?: string,
   override?: string,
 ): LandingLanguage {
-  const explicit = override?.trim().toLowerCase().split('-')[0];
-  if (explicit && isLandingLanguage(explicit)) return explicit;
+  const explicit = override && matchLandingLanguage(override);
+  if (explicit) return explicit;
 
   for (const part of (acceptLanguage ?? '').split(',')) {
-    // "pt-BR;q=0.9" → "pt"
-    const tag = part.split(';')[0].trim().toLowerCase().split('-')[0];
-    if (tag && isLandingLanguage(tag)) return tag;
+    // "pt-BR;q=0.9" → "pt-BR"
+    const match = matchLandingLanguage(part.split(';')[0]);
+    if (match) return match;
   }
   return DEFAULT_LANDING_LANGUAGE;
 }

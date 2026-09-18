@@ -28,7 +28,7 @@ games, max 3 times ever, 60-day cooldown, and deliberately **before** the inters
 `tests/unit/review-gate.test.ts`.
 
 **2. Real landing page + SEO.** `server/lib/landing-content.ts` serves a localized marketing
-page (pt/es/it/en/fr/de), plus `robots.txt` and `sitemap.xml`, wired in `server/index.ts`.
+page (pt-BR/pt-PT/es/it/en/fr/de), plus `robots.txt` and `sitemap.xml`, wired in `server/index.ts`.
 Replaces the Expo Go dev stub, which was deleted (`server/templates/landing-page.html`).
 
 **3. Store listings.** `store/listing.md` went 3 → 13 locales, tiered by real demand.
