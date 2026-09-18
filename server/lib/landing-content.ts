@@ -12,7 +12,7 @@
 // English rather than shipping machine-translated marketing copy.
 
 const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.jaimetjr.bisca';
-const CONTACT_EMAIL = 'jaime.tasca.jr@gmail.com';
+const CONTACT_EMAIL = 'contact@biscagame.com';
 
 const BG = '#1a472a';
 const BG_DARK = '#0f2d1a';

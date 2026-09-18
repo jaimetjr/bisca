@@ -474,7 +474,7 @@ AI 또는 온라인으로 브리스카를 즐기세요. 1v1과 2v2, 무료 및 �
 # Shared across all languages
 
 ## Contact
-Email: jaime.tasca.jr@gmail.com
+Email: contact@biscagame.com
 Website: https://bisca-production.up.railway.app
 Privacy policy: https://bisca-production.up.railway.app/privacy
 
