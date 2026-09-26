@@ -213,7 +213,7 @@ export default function HomeScreen() {
                     testID="practice-btn"
                 >
                     <View style={styles.practiceIcon}>
-                        <MaterialCommunityIcons name="school" size={24} color={Colors.success} />
+                        <MaterialCommunityIcons name="school" size={24} color={Colors.successText} />
                     </View>
                     <View style={styles.menuButtonContent}>
                         <Text style={styles.practiceTitle}>{t('home.practice')}</Text>

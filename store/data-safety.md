@@ -12,7 +12,7 @@ match history/stats/quests/achievements; AdMob uses the advertising ID.
 
 ## Do you provide a way for users to request that their data be deleted?
 **Yes** — in-app (Settings → Delete Account) and by email. Deletion URL:
-`https://bisca-production.up.railway.app/account-deletion`
+`https://biscagame.com/account-deletion`
 
 ---
 
@@ -23,7 +23,7 @@ match history/stats/quests/achievements; AdMob uses the advertising ID.
 |---|---|---|---|---|---|
 | Email address | Yes | No | No | No (required to register; guest play needs no account) | Account management |
 | Name | Yes | No | No | No | Account management |
-| Date of birth | Yes | No | No | No | Account management (age 18+ eligibility) |
+| Date of birth | Yes | No | No | No | Account management (age 13+ eligibility) |
 
 ### App activity
 | Type | Collected | Shared | Purpose |

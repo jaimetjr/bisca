@@ -6,7 +6,11 @@ import { Asset } from 'expo-asset';
 import { View, Platform } from 'react-native';
 import DeviceInfo from 'react-native-device-info';
 import { QueryClientProvider } from '@tanstack/react-query';
-import mobileAds, { MaxAdContentRating } from 'react-native-google-mobile-ads';
+import mobileAds, {
+  MaxAdContentRating,
+  AdsConsent,
+  AdsConsentDebugGeography,
+} from 'react-native-google-mobile-ads';
 import * as Sentry from '@sentry/react-native';
 import Colors from '@/shared/constants/colors';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -39,6 +43,27 @@ Sentry.init({
 // Emulators are covered by 'EMULATOR'; add a real phone's id via
 // EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS (comma-separated; the SDK logs the id on
 // first ad request).
+
+/**
+ * Forces the UMP SDK to treat this device as if it were in a given region, so
+ * the EEA consent form can be exercised from outside the EEA. Only ever applies
+ * to devices listed in EXPO_PUBLIC_ADMOB_TEST_DEVICE_IDS — Google ignores it
+ * for everyone else, so shipping it set would not affect real players. Unset in
+ * every build profile regardless; it exists for manual verification.
+ */
+function debugGeography(): AdsConsentDebugGeography | undefined {
+  switch (process.env.EXPO_PUBLIC_ADMOB_DEBUG_GEOGRAPHY) {
+    case 'EEA':
+      return AdsConsentDebugGeography.EEA;
+    case 'OTHER':
+      return AdsConsentDebugGeography.OTHER;
+    case 'REGULATED_US_STATE':
+      return AdsConsentDebugGeography.REGULATED_US_STATE;
+    default:
+      return undefined;
+  }
+}
+
 if (Platform.OS !== 'web') {
   const testDeviceIdentifiers = [
     'EMULATOR',
@@ -48,6 +73,40 @@ if (Platform.OS !== 'web') {
       .filter(Boolean),
   ];
   (async () => {
+    // EEA/UK consent, via Google's own UMP SDK. Since 16 Jan 2024 Google has
+    // required a certified CMP for ALL EEA/UK ad traffic, personalized or not:
+    // even a non-personalized ad reads and writes on the device, which is what
+    // ePrivacy actually regulates. requestNonPersonalizedAdsOnly on the ad
+    // requests is not a substitute and never was.
+    //
+    // gatherConsent() runs the info update and shows the form only where one is
+    // required, so players outside a regulated region see nothing at all.
+    //
+    // IMPORTANT: this code is inert until a GDPR message is published in
+    // AdMob → Privacy & messaging. Without that message there is no form to
+    // fetch, gatherConsent() resolves with nothing shown, and EEA traffic stays
+    // non-compliant. The console step is the part that makes this work.
+    try {
+      await AdsConsent.gatherConsent({
+        testDeviceIdentifiers,
+        debugGeography: debugGeography(),
+      });
+    } catch {
+      // Typically a network failure fetching the form. Don't guess from here —
+      // read the SDK's own cached state below, which survives the failure and
+      // may already hold a consent obtained in an earlier session.
+    }
+
+    // The authoritative answer, cached by the SDK across launches. Outside a
+    // regulated region this is true with status NOT_REQUIRED, so nothing
+    // changes for most players. If we cannot read it at all we serve no ads:
+    // the game is completely playable without them, and serving unconsented
+    // ads in the EEA is the one outcome worth avoiding.
+    let canRequestAds = false;
+    try {
+      ({ canRequestAds } = await AdsConsent.getConsentInfo());
+    } catch {}
+
     try {
       // 13+ general-audience config (see shared/constants/policy.ts):
       // - maxAdContentRating T caps ad creatives at Teen so a 13-year-old never
@@ -56,14 +115,17 @@ if (Platform.OS !== 'web') {
       // - tagForChildDirectedTreatment false declares we are NOT a child-directed
       //   (<13, COPPA) app. Never set this true here — it would opt the app into
       //   the children's regime we deliberately gate out.
-      // Personalization is already handled per-request: both ad hooks pass
-      // requestNonPersonalizedAdsOnly: true, so no TFUA tag is needed.
+      // Personalization is additionally pinned off per-request: both ad hooks
+      // pass requestNonPersonalizedAdsOnly: true.
       await mobileAds().setRequestConfiguration({
         testDeviceIdentifiers,
         maxAdContentRating: MaxAdContentRating.T,
         tagForChildDirectedTreatment: false,
       });
     } catch {}
+
+    if (!canRequestAds) return;
+
     try {
       await mobileAds().initialize();
     } catch {}

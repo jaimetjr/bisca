@@ -93,11 +93,12 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// Email verification is optional for v1: real verification emails require a
-// verified sending domain (Resend), which isn't configured yet. Data endpoints
-// use requireAuth only. Re-add a requireVerified gate here once email delivery
-// is live if unverified-account abuse becomes a concern. The token still carries
-// the `ev` claim, so re-gating is a one-line change per route.
+// Data endpoints use requireAuth only, with no server-side verified-email gate.
+// Delivery itself is live (Brevo, see lib/email.ts) and the client hard-gates
+// unverified accounts to the verify screen in app/_layout.tsx, so this is a
+// client-side rule rather than a server-enforced one. Add a requireVerified
+// gate here if unverified-account abuse ever becomes a concern: the token
+// already carries the `ev` claim, so it is a one-line change per route.
 
 // Keep only the string fields so the pure validator never sees a non-string.
 function passwordContext(raw: {

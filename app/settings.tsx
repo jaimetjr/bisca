@@ -13,17 +13,12 @@ import type { AIDifficulty } from '@/shared/lib/types';
 import { useAuth } from '@shared/hooks/useAuth';
 import { useGuestMode } from '@shared/hooks/useGuestMode';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
-import { getApiUrl } from '@shared/query-client';
 import DeleteAccountModal from '@/components/DeleteAccountModal';
 import { CARD_BACK_IMAGES } from '@/components/CardSprite';
 import { CARD_BACK_IDS } from '@shared/lib/brisca/card-backs';
 import { useCardBack } from '@shared/hooks/useCardBack';
-
-// Legal pages are served by the same Express server as the API, so derive their
-// URLs from the same source of truth (EXPO_PUBLIC_DOMAIN via getApiUrl) rather
-// than hardcoding the host. getApiUrl() returns a trailing-slash base.
-const PRIVACY_URL = `${getApiUrl()}privacy`;
-const TERMS_URL = `${getApiUrl()}terms`;
+import { useAdPrivacyOptions } from '@shared/hooks/useAdPrivacyOptions';
+import { PRIVACY_URL, TERMS_URL } from '@shared/lib/legal-urls';
 
 const DIFFICULTY_OPTIONS: AIDifficulty[] = ['easy', 'medium', 'hard'];
 const SPEED_OPTIONS: AppSettings['gameSpeed'][] = ['slow', 'normal', 'fast'];
@@ -46,6 +41,7 @@ export default function SettingsScreen() {
   const { signOut } = useAuth();
   const { isGuest, disableGuestMode } = useGuestMode();
   const { isPremium, available, purchase, restore } = useEntitlement();
+  const adPrivacy = useAdPrivacyOptions();
   const [signingOut, setSigningOut] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -228,7 +224,7 @@ export default function SettingsScreen() {
           onPress={handleSignOut}
           disabled={signingOut}
         >
-          <MaterialCommunityIcons name="logout" size={18} color={Colors.danger} />
+          <MaterialCommunityIcons name="logout" size={18} color={Colors.dangerText} />
           <Text style={styles.signOutText}>
             {isGuest ? t('settings.leaveGuestMode') : t('settings.signOut')}
           </Text>
@@ -240,7 +236,7 @@ export default function SettingsScreen() {
             onPress={() => setDeleteVisible(true)}
             testID="settings-delete-account"
           >
-            <MaterialCommunityIcons name="delete-outline" size={18} color={Colors.danger} />
+            <MaterialCommunityIcons name="delete-outline" size={18} color={Colors.dangerText} />
             <Text style={styles.signOutText}>{t('settings.deleteAccount')}</Text>
           </Pressable>
         )}
@@ -289,6 +285,21 @@ export default function SettingsScreen() {
           <Text style={styles.accountBtnText}>{t('settings.terms')}</Text>
           <MaterialCommunityIcons name="open-in-new" size={16} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
         </Pressable>
+
+        {/* Ad consent. Shown only where UMP says the entry point is required —
+            i.e. a player who was actually given a consent form. Everywhere else
+            this row would open an empty form, so it stays hidden. */}
+        {adPrivacy.available && (
+          <Pressable
+            style={({ pressed }) => [styles.accountBtn, pressed && { opacity: 0.75 }]}
+            onPress={() => { void adPrivacy.open(); }}
+            testID="settings-ad-privacy"
+          >
+            <MaterialCommunityIcons name="tune-variant" size={18} color={Colors.white} />
+            <Text style={styles.accountBtnText}>{t('settings.adPrivacy')}</Text>
+            <MaterialCommunityIcons name="chevron-right" size={16} color={Colors.textSecondary} style={{ marginLeft: 'auto' }} />
+          </Pressable>
+        )}
 
         <Pressable
           style={({ pressed }) => [styles.accountBtn, pressed && { opacity: 0.75 }]}
@@ -386,5 +397,5 @@ const styles = StyleSheet.create({
     padding: 16,
     marginTop: 4,
   },
-  signOutText: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.danger },
+  signOutText: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.dangerText },
 });

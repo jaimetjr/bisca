@@ -71,7 +71,7 @@ export default function AchievementsScreen() {
 
       {error && !isLoading && (
         <View style={styles.centerContent}>
-          <MaterialCommunityIcons name="alert-circle" size={48} color={Colors.danger} />
+          <MaterialCommunityIcons name="alert-circle" size={48} color={Colors.dangerText} />
           <Text style={styles.errorText}>{t('achievements.loadError')}</Text>
         </View>
       )}
@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   backButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center', marginLeft: -8 },
   title: { fontSize: 28, fontFamily: 'Inter_700Bold', color: Colors.gold },
   centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  errorText: { color: Colors.danger, fontSize: 14, fontFamily: 'Inter_500Medium', textAlign: 'center' },
+  errorText: { color: Colors.dangerText, fontSize: 14, fontFamily: 'Inter_500Medium', textAlign: 'center' },
   summaryCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: Colors.whiteAlpha2, borderRadius: 14, padding: 14,

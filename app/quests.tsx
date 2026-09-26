@@ -102,14 +102,14 @@ export default function QuestsScreen() {
 
       {error && !isLoading && (
         <View style={styles.centerContent}>
-          <MaterialCommunityIcons name="alert-circle" size={48} color={Colors.danger} />
+          <MaterialCommunityIcons name="alert-circle" size={48} color={Colors.dangerText} />
           <Text style={styles.errorText}>{t('quests.loadError')}</Text>
         </View>
       )}
 
       {errorMsg !== '' && (
         <View style={styles.errorBanner}>
-          <MaterialCommunityIcons name="alert" size={16} color={Colors.danger} />
+          <MaterialCommunityIcons name="alert" size={16} color={Colors.dangerText} />
           <Text style={styles.errorBannerText}>{errorMsg}</Text>
         </View>
       )}
@@ -187,14 +187,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontFamily: 'Inter_700Bold', color: Colors.gold },
   subtitle: { fontSize: 12, fontFamily: 'Inter_400Regular', color: Colors.textSecondary, marginTop: 2 },
   centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 },
-  errorText: { color: Colors.danger, fontSize: 14, fontFamily: 'Inter_500Medium', textAlign: 'center' },
+  errorText: { color: Colors.dangerText, fontSize: 14, fontFamily: 'Inter_500Medium', textAlign: 'center' },
   errorBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: 'rgba(198, 40, 40, 0.15)',
     borderColor: Colors.danger, borderWidth: 1,
     borderRadius: 10, padding: 10, marginBottom: 12,
   },
-  errorBannerText: { color: Colors.danger, fontSize: 12, fontFamily: 'Inter_500Medium' },
+  // dangerText lands on 4.70:1 over this banner's own fill (#34422A), so the
+  // tinted background needs no adjustment.
+  errorBannerText: { color: Colors.dangerText, fontSize: 12, fontFamily: 'Inter_500Medium' },
   emptyText: {
     color: Colors.textSecondary, fontSize: 14, fontFamily: 'Inter_400Regular',
     textAlign: 'center', marginTop: 40,

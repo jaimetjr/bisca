@@ -73,7 +73,7 @@ export default function DeleteAccountModal({ visible, onClose }: DeleteAccountMo
       >
         <View style={styles.card} testID="delete-account-modal">
           <View style={styles.iconCircle}>
-            <MaterialCommunityIcons name="alert-outline" size={30} color={Colors.danger} />
+            <MaterialCommunityIcons name="alert-outline" size={30} color={Colors.dangerText} />
           </View>
           <Text style={styles.title}>{t('settings.deleteAccountTitle')}</Text>
           <Text style={styles.body}>{t('settings.deleteAccountBody')}</Text>
@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   error: {
-    color: Colors.danger,
+    color: Colors.dangerText,
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
     textAlign: 'center',

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform, ScrollView, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TextInput, ActivityIndicator, Platform, ScrollView, KeyboardAvoidingView, Linking } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import { t } from '@/shared/i18n';
 import { useLanguage } from '@shared/hooks/useLanguage';
 import { validatePassword } from '@shared/lib/validation/password';
 import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
+import { PRIVACY_URL, TERMS_URL } from '@shared/lib/legal-urls';
 
 export default function LoginScreen() {
   const contentPadding = useContentPadding(28);
@@ -130,6 +131,9 @@ export default function LoginScreen() {
             keyboardType="number-pad"
             maxLength={10}
           />
+          {/* Say why we are asking before they type it, rather than letting
+              auth.errMinAge be the first explanation they ever see. */}
+          <Text style={styles.fieldNote}>{t('auth.dobWhy', { age: MIN_SIGNUP_AGE })}</Text>
         </>
       )}
 
@@ -171,6 +175,31 @@ export default function LoginScreen() {
           <Text style={styles.primaryBtnText}>{isRegistering ? t('auth.createAccount') : t('auth.signIn')}</Text>
         )}
       </Pressable>
+
+      {/* The only place a new user meets these before handing over an email,
+          a real name and a date of birth. The Settings links are no help here:
+          nobody reaches Settings before registering. */}
+      {isRegistering && (
+        <Text style={styles.consentText}>
+          {t('auth.consentNotice')}{' '}
+          <Text
+            style={styles.consentLink}
+            onPress={() => Linking.openURL(TERMS_URL)}
+            testID="signup-terms-link"
+          >
+            {t('auth.consentTerms')}
+          </Text>
+          {' '}{t('auth.consentAnd')}{' '}
+          <Text
+            style={styles.consentLink}
+            onPress={() => Linking.openURL(PRIVACY_URL)}
+            testID="signup-privacy-link"
+          >
+            {t('auth.consentPrivacy')}
+          </Text>
+          .
+        </Text>
+      )}
 
       <Pressable onPress={() => { setIsRegistering(!isRegistering); setErrorMsg(''); setEmail(''); setPassword(''); setFirstName(''); setLastName(''); setDateOfBirth(''); }}>
         <Text style={styles.switchText}>
@@ -229,7 +258,13 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { fontSize: 16, fontFamily: 'Inter_700Bold', color: Colors.textDark },
   switchText: { color: Colors.textSecondary, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
-  errorText: { color: Colors.danger, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
+  fieldNote: { color: Colors.textSecondary, fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: -6, paddingHorizontal: 4 },
+  consentText: {
+    color: Colors.textSecondary, fontSize: 12, fontFamily: 'Inter_400Regular',
+    textAlign: 'center', lineHeight: 18, paddingHorizontal: 4,
+  },
+  consentLink: { color: Colors.gold, fontFamily: 'Inter_600SemiBold', textDecorationLine: 'underline' },
+  errorText: { color: Colors.dangerText, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
   guestBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     borderWidth: 1, borderColor: Colors.whiteAlpha, borderRadius: 12, paddingVertical: 14,
