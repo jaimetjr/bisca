@@ -8,13 +8,49 @@
 
 import { MIN_SIGNUP_AGE } from '../../shared/constants/policy';
 
+// Who operates the app, for the privacy policy and terms.
+//
+// No street address on purpose. The EU e-Commerce Directive's Art. 5 address
+// requirement binds providers ESTABLISHED IN THE EU; this company is
+// established in Brazil, so it does not apply. What does apply is GDPR Art. 13,
+// which asks for "the identity and contact details of the controller" — an
+// email satisfies contact details. The CNPJ carries the identity: it resolves
+// to the full registered entity in the Receita Federal's public database, which
+// is stronger identification than a street line.
+//
+// COMPANY_ADDRESS stays available for the day the sede is a commercial address
+// rather than a private home; it renders only when set.
+const COMPANY_LEGAL_NAME = 'JTJ TECNOLOGIA DA INFORMACAO LTDA'; // razao social, as on the Cartao CNPJ
+const COMPANY_REGISTRATION = '45.776.357/0001-02';
+const COMPANY_ADDRESS = ''; // optional; omit while the sede is a private home
+
 const APP_NAME = 'Brisca';
 const CONTACT_EMAIL = 'contact@biscagame.com';
-const LAST_UPDATED = 'July 25, 2026';
+const LAST_UPDATED = 'September 25, 2026';
 
 // AdMob publisher id (from the ca-app-pub-9412542080032324/* ad unit IDs).
 // f08c47fec0942fa0 is Google's fixed certification-authority id.
 export const APP_ADS_TXT = 'google.com, pub-9412542080032324, DIRECT, f08c47fec0942fa0\n';
+
+/**
+ * Identifies who operates the app, on both the privacy policy and the terms.
+ *
+ * Keyed on the legal name alone: the CNPJ and the address are each rendered
+ * only if set, so the block is useful with just a name and gains detail as the
+ * others are filled in. Renders nothing at all while the name is empty, so the
+ * pages never ship a half-written legal identity.
+ */
+function publisherHtml(): string {
+  if (!COMPANY_LEGAL_NAME) return '';
+  const cnpj = COMPANY_REGISTRATION ? `<br />CNPJ: ${COMPANY_REGISTRATION}` : '';
+  const address = COMPANY_ADDRESS ? `<br />${COMPANY_ADDRESS}` : '';
+  return `
+  <h2>Who operates ${APP_NAME}</h2>
+  <p>${APP_NAME} is operated by ${COMPANY_LEGAL_NAME}, a company registered in
+  Brazil.${cnpj}${address}<br />
+  Contact: <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a></p>
+`;
+}
 
 function page(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
@@ -72,7 +108,19 @@ export const PRIVACY_HTML = page('Privacy Policy', `
       your device's advertising ID and related signals to serve and measure ads.</li>
     <li><strong>Technical data</strong>: basic server logs (request method, path, timestamp)
       for reliability and abuse prevention.</li>
+    <li><strong>Crash diagnostics</strong>: when the app crashes or hits an error, a report
+      containing your device model, operating system version, app version, IP address and a
+      short trail of in-app actions leading up to the fault. We do not attach your account
+      identifier to these reports.</li>
   </ul>
+
+  <h2>Advertising and your consent</h2>
+  <p>The free version of ${APP_NAME} is supported by advertising served by Google AdMob.
+  We request non-personalised ads only.</p>
+  <p>If you are in the European Economic Area or the United Kingdom, you are shown a consent
+  form before any ad is loaded, and no ads are requested until you have answered it. You can
+  change that choice at any time from <strong>Settings &rarr; Ad Privacy</strong> inside the
+  app.</p>
 
   <h2>How we use it</h2>
   <ul>
@@ -85,7 +133,11 @@ export const PRIVACY_HTML = page('Privacy Policy', `
   <ul>
     <li><strong>Google AdMob</strong> — advertising. See Google's
       <a href="https://policies.google.com/privacy">Privacy Policy</a>.</li>
-    <li><strong>Resend</strong> — sends account verification and password-reset emails.</li>
+    <li><strong>Brevo</strong> (Brevo SA, France) — sends account verification and
+      password-reset emails. Nothing else is ever emailed to you; we run no mailing list.
+      See <a href="https://www.brevo.com/legal/privacypolicy/">Brevo's Privacy Policy</a>.</li>
+    <li><strong>Sentry</strong> (Functional Software, Inc.) — crash and error diagnostics.
+      See <a href="https://sentry.io/privacy/">Sentry's Privacy Policy</a>.</li>
     <li><strong>Railway</strong> — hosts our server and database.</li>
   </ul>
 
@@ -107,6 +159,7 @@ export const PRIVACY_HTML = page('Privacy Policy', `
 
   <h2>Changes</h2>
   <p>We may update this policy; material changes will be reflected by the "Last updated" date above.</p>
+${publisherHtml()}
 `);
 
 export const TERMS_HTML = page('Terms of Service', `
@@ -139,6 +192,7 @@ export const TERMS_HTML = page('Terms of Service', `
 
   <h2>Contact</h2>
   <p>Questions about these terms: <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a>.</p>
+${publisherHtml()}
 `);
 
 export const ACCOUNT_DELETION_HTML = page('Account & Data Deletion', `

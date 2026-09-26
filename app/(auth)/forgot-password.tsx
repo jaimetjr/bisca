@@ -171,5 +171,5 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { fontSize: 16, fontFamily: 'Inter_700Bold', color: Colors.textDark },
   mutedLink: { color: Colors.textSecondary, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
-  errorText: { color: Colors.danger, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
+  errorText: { color: Colors.dangerText, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
 });

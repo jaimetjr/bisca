@@ -589,7 +589,7 @@ export default function OnlineLobbyScreen() {
 
         {status === 'error' && (
           <View style={styles.centerContent}>
-            <MaterialCommunityIcons name="alert-circle" size={48} color={Colors.danger} />
+            <MaterialCommunityIcons name="alert-circle" size={48} color={Colors.dangerText} />
             <Text style={styles.errorText}>{errorMsg}</Text>
             {strandedOnDeadRoom ? (
               // Nothing retryable here; the countdown is on the button itself.
@@ -849,7 +849,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
   },
   errorText: {
-    color: Colors.danger,
+    color: Colors.dangerText,
     fontSize: 15,
     fontFamily: 'Inter_500Medium',
     textAlign: 'center',

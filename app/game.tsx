@@ -61,8 +61,8 @@ const HAND_GLOW_BORDER = 2;
 
 /** Icon and colour per kind of coach message. `hint` is the only one the banner adds. */
 const COACH_TONE = {
-  hint: { icon: 'lightbulb-on' as const, color: Colors.success },
-  good: { icon: 'thumb-up-outline' as const, color: Colors.success },
+  hint: { icon: 'lightbulb-on' as const, color: Colors.successText },
+  good: { icon: 'thumb-up-outline' as const, color: Colors.successText },
   warn: { icon: 'alert-circle-outline' as const, color: Colors.gold },
   info: { icon: 'cards-playing-outline' as const, color: Colors.textSecondary },
 };
@@ -700,7 +700,7 @@ export default function GameScreen() {
         <View style={{ flex: 1 }} />
         {isPractice && isMyTurn && (
           <Pressable style={styles.hintBtn} onPress={handleHint} testID="hint-btn">
-            <MaterialCommunityIcons name="lightbulb-on" size={16} color={Colors.success} />
+            <MaterialCommunityIcons name="lightbulb-on" size={16} color={Colors.successText} />
             <Text style={styles.hintBtnText}>{t('game.hint')}</Text>
           </Pressable>
         )}
@@ -959,7 +959,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   hintBtnText: {
-    color: Colors.success,
+    color: Colors.successText,
     fontSize: 12,
     fontFamily: 'Inter_600SemiBold',
   },

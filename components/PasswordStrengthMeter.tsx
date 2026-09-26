@@ -20,11 +20,11 @@ interface Props {
 
 // Index by strength score (0..4). 0 and 1 both read as "Weak".
 const STRENGTH_LEVELS = [
-  { labelKey: 'auth.pwStrengthWeak', color: Colors.danger },
-  { labelKey: 'auth.pwStrengthWeak', color: Colors.danger },
+  { labelKey: 'auth.pwStrengthWeak', color: Colors.dangerText },
+  { labelKey: 'auth.pwStrengthWeak', color: Colors.dangerText },
   { labelKey: 'auth.pwStrengthFair', color: Colors.gold },
   { labelKey: 'auth.pwStrengthGood', color: Colors.goldLight },
-  { labelKey: 'auth.pwStrengthStrong', color: Colors.success },
+  { labelKey: 'auth.pwStrengthStrong', color: Colors.successText },
 ] as const;
 
 const SEGMENTS = 4;
@@ -85,7 +85,7 @@ export default function PasswordStrengthMeter({ password, context }: Props) {
               <MaterialCommunityIcons
                 name={passed ? 'check-circle' : 'circle-outline'}
                 size={16}
-                color={passed ? Colors.success : Colors.textSecondary}
+                color={passed ? Colors.successText : Colors.textSecondary}
               />
               <Text style={[styles.ruleText, passed && styles.ruleTextPassed]}>
                 {ruleLabel(id)}

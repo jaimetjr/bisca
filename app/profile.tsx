@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   },
   readonlyField: { justifyContent: 'center' },
   readonlyText: { fontSize: 15, fontFamily: 'Inter_500Medium', color: Colors.textSecondary },
-  errorText: { color: Colors.danger, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
+  errorText: { color: Colors.dangerText, fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
   saveBtn: {
     backgroundColor: Colors.gold,
     borderRadius: 12,
