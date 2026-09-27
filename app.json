@@ -3,7 +3,7 @@
     "name": "Bisca",
     "slug": "bisca",
     "scheme": "bisca",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "automatic",

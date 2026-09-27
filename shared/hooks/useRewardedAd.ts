@@ -7,6 +7,8 @@ import {
   TestIds,
 } from 'react-native-google-mobile-ads';
 import { reportAdLoadError, reportAdGiveUp } from '@shared/lib/ad-monitoring';
+import { createAdSlot } from '@shared/lib/ad-cache';
+import { adsReady } from '@shared/lib/ads-ready';
 
 const AD_UNIT_ID = __DEV__
   ? TestIds.REWARDED
@@ -15,10 +17,20 @@ const AD_UNIT_ID = __DEV__
       android: process.env.EXPO_PUBLIC_ADMOB_REWARDED_ANDROID,
     }) ?? TestIds.REWARDED;
 
-/** Max consecutive failed loads to retry before giving up until remount/show. */
-const MAX_LOAD_RETRIES = 3;
-/** Base backoff between retries; doubled each attempt (4s → 8s → 16s). */
-const BASE_RETRY_DELAY_MS = 4000;
+// App-wide: a loaded rewarded ad survives home-screen remounts (see ad-cache.ts).
+// No requestNonPersonalizedAdsOnly: the UMP consent answer decides per player.
+const slot = createAdSlot({
+  create: () => RewardedAd.createForAdRequest(AD_UNIT_ID),
+  events: {
+    loaded: RewardedAdEventType.LOADED,
+    earned: RewardedAdEventType.EARNED_REWARD,
+    closed: AdEventType.CLOSED,
+    error: AdEventType.ERROR,
+  },
+  ready: adsReady,
+  onLoadError: (error) => reportAdLoadError('rewarded', error),
+  onGiveUp: (error) => reportAdGiveUp('rewarded', error),
+});
 
 interface UseRewardedAdOptions {
   /** Called once the user completes the ad and qualifies for the reward. */
@@ -33,7 +45,7 @@ interface UseRewardedAdResult {
 }
 
 /**
- * Loads a rewarded ad in the background and surfaces showAd().
+ * Keeps a rewarded ad loaded in the background and surfaces showAd().
  * The reward callback fires only on EARNED_REWARD (full view), never on dismiss.
  *
  * NOTE: rewards must be cosmetic / convenience only.
@@ -41,97 +53,26 @@ interface UseRewardedAdResult {
  * guardrail. Do not pass an onEarned that mutates GameState.
  */
 export function useRewardedAd({ onEarned, disabled = false }: UseRewardedAdOptions): UseRewardedAdResult {
-  const adRef = useRef<RewardedAd | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const enabled = !disabled && Platform.OS !== 'web';
+  const [isLoaded, setIsLoaded] = useState(() => enabled && slot.isLoaded());
   const onEarnedRef = useRef(onEarned);
-  const disabledRef = useRef(disabled);
-  const mountedRef = useRef(true);
-  const retryCountRef = useRef(0);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   onEarnedRef.current = onEarned;
-  disabledRef.current = disabled;
-
-  const loadNext = useRef(function load() {
-    if (disabledRef.current || Platform.OS === 'web' || !mountedRef.current) return;
-    // Cancel any pending retry so we never run two loads in parallel.
-    if (retryTimerRef.current) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-    setIsLoaded(false);
-
-    const ad = RewardedAd.createForAdRequest(AD_UNIT_ID, {
-      requestNonPersonalizedAdsOnly: true,
-    });
-
-    ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
-      retryCountRef.current = 0;
-      if (mountedRef.current) setIsLoaded(true);
-    });
-
-    ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => {
-      try {
-        onEarnedRef.current();
-      } catch (err) {
-        console.warn('[useRewardedAd] onEarned threw:', err);
-      }
-    });
-
-    ad.addAdEventListener(AdEventType.CLOSED, () => {
-      if (mountedRef.current) setIsLoaded(false);
-      adRef.current = null;
-      loadNext.current();
-    });
-
-    ad.addAdEventListener(AdEventType.ERROR, (error) => {
-      if (mountedRef.current) setIsLoaded(false);
-      adRef.current = null;
-      reportAdLoadError('rewarded', error);
-      // Bounded retry with exponential backoff: a transient failure (no fill,
-      // flaky network) recovers on its own, but we stop after MAX_LOAD_RETRIES
-      // so a persistent error never turns into an infinite request loop.
-      if (!mountedRef.current) return;
-      if (retryCountRef.current >= MAX_LOAD_RETRIES) {
-        reportAdGiveUp('rewarded', error);
-        return;
-      }
-      const delay = BASE_RETRY_DELAY_MS * 2 ** retryCountRef.current;
-      retryCountRef.current += 1;
-      retryTimerRef.current = setTimeout(() => {
-        retryTimerRef.current = null;
-        loadNext.current();
-      }, delay);
-    });
-
-    adRef.current = ad;
-    ad.load();
-  });
 
   useEffect(() => {
-    mountedRef.current = true;
-    loadNext.current();
-    return () => {
-      mountedRef.current = false;
-      adRef.current = null;
-      if (retryTimerRef.current) {
-        clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  const showAd = useCallback(async () => {
-    if (disabledRef.current || Platform.OS === 'web') return;
-    if (adRef.current && isLoaded) {
-      await adRef.current.show();
+    if (!enabled) {
+      setIsLoaded(false);
       return;
     }
-    // Not loaded (e.g. retries exhausted): kick a fresh load so a manual
-    // retry path has something to show next time.
-    retryCountRef.current = 0;
-    loadNext.current();
-  }, [isLoaded]);
+    const unsubscribe = slot.subscribe(setIsLoaded);
+    setIsLoaded(slot.isLoaded());
+    slot.ensureLoaded();
+    return unsubscribe;
+  }, [enabled]);
+
+  const showAd = useCallback(async () => {
+    if (!enabled) return;
+    await slot.show(() => onEarnedRef.current());
+  }, [enabled]);
 
   return { isLoaded, showAd };
 }

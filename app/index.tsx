@@ -15,9 +15,13 @@ import { useLanguage } from '@shared/hooks/useLanguage';
 import { useEntitlement } from '@shared/hooks/useEntitlement';
 import { useRewards } from '@shared/hooks/useRewards';
 import { useRewardedAd } from '@shared/hooks/useRewardedAd';
+import { useAdsReady } from '@shared/hooks/useAdsReady';
 import { useTutorial } from '@shared/hooks/useTutorial';
 import { reportAdLoadError, reportAdGiveUp } from '@shared/lib/ad-monitoring';
 import { setPendingAuthMode } from '@shared/lib/auth-nav-intent';
+
+/** Cap for the inline adaptive banner: tall enough for Google's larger creatives, short enough to keep the menu in view. */
+const BANNER_MAX_HEIGHT = 100;
 
 const BANNER_AD_UNIT_ID = __DEV__
   ? TestIds.BANNER
@@ -46,7 +50,7 @@ export default function HomeScreen() {
     const insets = useSafeAreaInsets();
     const topPadding = Platform.OS === 'web' ? 67 : insets.top;
     const bottomPadding = Platform.OS === 'web' ? 34 : insets.bottom;
-    const { height: windowHeight } = useWindowDimensions();
+    const { height: windowHeight, width: windowWidth } = useWindowDimensions();
     const contentPadding = useContentPadding(24);
     const usableHeight = windowHeight - topPadding - bottomPadding - 40;
     const scale = Math.max(MIN_AIR_SCALE, Math.min(1, usableHeight / REF_USABLE_HEIGHT));
@@ -63,6 +67,7 @@ export default function HomeScreen() {
         onEarned: () => { void rewards.grantSkipPass(); },
         disabled: isPremium || Platform.OS === 'web',
     });
+    const adsReady = useAdsReady();
     useLanguage(); // subscribe to language changes so t() output updates
 
     const { seen, isLoaded: tutorialLoaded, markSeen } = useTutorial();
@@ -256,11 +261,17 @@ export default function HomeScreen() {
                     </Pressable>
                 )}
 
-                {!isPremium && Platform.OS !== 'web' && (
+                {!isPremium && Platform.OS !== 'web' && adsReady && (
                     <View style={styles.bannerContainer}>
+                        {/* Inline adaptive: sized to the content column, the
+                            format Google recommends for a banner inside
+                            scrolling content. It fills and pays better than the
+                            fixed 320x50; maxHeight keeps the home layout sane. */}
                         <BannerAd
                             unitId={BANNER_AD_UNIT_ID}
-                            size={BannerAdSize.BANNER}
+                            size={BannerAdSize.INLINE_ADAPTIVE_BANNER}
+                            width={windowWidth - 2 * contentPadding}
+                            maxHeight={BANNER_MAX_HEIGHT}
                             onAdFailedToLoad={(error) => {
                                 // No retry for the banner — one failure is the give-up.
                                 reportAdLoadError('banner', error);
