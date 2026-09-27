@@ -1,7 +1,9 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
 import { reportAdLoadError, reportAdGiveUp } from '@shared/lib/ad-monitoring';
+import { createAdSlot } from '@shared/lib/ad-cache';
+import { adsReady } from '@shared/lib/ads-ready';
 import { useRewards } from './useRewards';
 
 const AD_UNIT_ID = __DEV__
@@ -11,70 +13,36 @@ const AD_UNIT_ID = __DEV__
       android: process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ANDROID,
     }) ?? TestIds.INTERSTITIAL;
 
+// App-wide: a loaded interstitial survives game-screen remounts (see ad-cache.ts).
+// No requestNonPersonalizedAdsOnly: the UMP consent answer decides per player.
+const slot = createAdSlot({
+  create: () => InterstitialAd.createForAdRequest(AD_UNIT_ID),
+  events: { loaded: AdEventType.LOADED, closed: AdEventType.CLOSED, error: AdEventType.ERROR },
+  ready: adsReady,
+  onLoadError: (error) => reportAdLoadError('interstitial', error),
+  onGiveUp: (error) => reportAdGiveUp('interstitial', error),
+});
+
 /**
- * Loads an interstitial ad in the background and exposes showAd().
+ * Keeps an interstitial loaded in the background and exposes showAd().
  * If isPremium is true or platform is web, showAd() is always a no-op.
- * The next ad is preloaded automatically after one is dismissed.
  */
 export function useInterstitialAd(isPremium: boolean) {
-  const adRef = useRef<InterstitialAd | null>(null);
-  const isLoadedRef = useRef(false);
-  const isPremiumRef = useRef(isPremium);
-  const mountedRef = useRef(true);
-  isPremiumRef.current = isPremium;
+  const enabled = !isPremium && Platform.OS !== 'web';
   const { consumeSkipPass } = useRewards();
 
-  // Stable function reference to create + load the next ad
-  const loadNext = useRef(function load() {
-    if (isPremiumRef.current || Platform.OS === 'web' || !mountedRef.current) return;
-    isLoadedRef.current = false;
-
-    const ad = InterstitialAd.createForAdRequest(AD_UNIT_ID, {
-      requestNonPersonalizedAdsOnly: true,
-    });
-
-    ad.addAdEventListener(AdEventType.LOADED, () => {
-      isLoadedRef.current = true;
-    });
-
-    ad.addAdEventListener(AdEventType.CLOSED, () => {
-      isLoadedRef.current = false;
-      adRef.current = null;
-      loadNext.current(); // preload next ad immediately after dismiss
-    });
-
-    // There is no retry system here (a missed interstitial is low-stakes), so
-    // a single failure IS the give-up: report it as a Sentry event.
-    ad.addAdEventListener(AdEventType.ERROR, (error) => {
-      isLoadedRef.current = false;
-      adRef.current = null;
-      reportAdLoadError('interstitial', error);
-      reportAdGiveUp('interstitial', error);
-    });
-
-    adRef.current = ad;
-    ad.load();
-  });
-
   useEffect(() => {
-    mountedRef.current = true;
-    loadNext.current();
-    return () => {
-      mountedRef.current = false;
-      adRef.current = null;
-    };
-  }, []);
+    if (enabled) slot.ensureLoaded();
+  }, [enabled]);
 
   const showAd = useCallback(async () => {
-    if (isPremiumRef.current || Platform.OS === 'web') return;
+    if (!enabled) return;
     // Honour any rewarded "skip pass" the user earned — non-P2W: this only
     // skips an interstitial, never alters gameplay or score.
     const skipped = await consumeSkipPass();
     if (skipped) return;
-    if (adRef.current && isLoadedRef.current) {
-      await adRef.current.show();
-    }
-  }, [consumeSkipPass]);
+    await slot.show();
+  }, [enabled, consumeSkipPass]);
 
   return { showAd };
 }

@@ -39,7 +39,9 @@ Notes:
 - **Account data (email/name/DOB)** is collected only when a user registers.
   Guest mode plays offline and collects none of it.
 - **Advertising ID** is collected by the Google Mobile Ads (AdMob) SDK to serve
-  and measure ads. In the Data Safety "shared" sense, this goes to Google.
+  and measure ads, and to personalise them where the player's consent allows
+  (EEA/UK: UMP consent form). In the Data Safety "shared" sense, this goes to
+  Google.
 - We do **not** collect location, contacts, photos, messages, audio, files, or
   precise identifiers beyond the above.
 

@@ -116,7 +116,8 @@ export const PRIVACY_HTML = page('Privacy Policy', `
 
   <h2>Advertising and your consent</h2>
   <p>The free version of ${APP_NAME} is supported by advertising served by Google AdMob.
-  We request non-personalised ads only.</p>
+  Ads may be personalised using your advertising ID, but only where the law allows it and,
+  in the European Economic Area and the United Kingdom, only if you agree.</p>
   <p>If you are in the European Economic Area or the United Kingdom, you are shown a consent
   form before any ad is loaded, and no ads are requested until you have answered it. You can
   change that choice at any time from <strong>Settings &rarr; Ad Privacy</strong> inside the

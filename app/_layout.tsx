@@ -25,6 +25,7 @@ import { consumePendingInvite } from '@/shared/lib/pending-invite';
 import { consumePendingAuthMode } from '@/shared/lib/auth-nav-intent';
 import { shouldPreloadFullDeck } from '@/shared/lib/device-memory';
 import { ALL_CARD_ASSETS, CARD_BACK_IMAGES } from '@/components/CardSprite';
+import { resolveAdsReady } from '@/shared/lib/ads-ready';
 
 // Crash/error reporting. The DSN is a public identifier (safe to embed) and is
 // only set for EAS preview/production builds via eas.json — `enabled` keeps dev
@@ -115,8 +116,9 @@ if (Platform.OS !== 'web') {
       // - tagForChildDirectedTreatment false declares we are NOT a child-directed
       //   (<13, COPPA) app. Never set this true here — it would opt the app into
       //   the children's regime we deliberately gate out.
-      // Personalization is additionally pinned off per-request: both ad hooks
-      // pass requestNonPersonalizedAdsOnly: true.
+      // Personalization is left to the consent answer: the UMP SDK passes the
+      // player's choice (TCF string) with every request, so no per-request
+      // override is set.
       await mobileAds().setRequestConfiguration({
         testDeviceIdentifiers,
         maxAdContentRating: MaxAdContentRating.T,
@@ -124,11 +126,17 @@ if (Platform.OS !== 'web') {
       });
     } catch {}
 
-    if (!canRequestAds) return;
+    if (!canRequestAds) {
+      resolveAdsReady(false);
+      return;
+    }
 
     try {
       await mobileAds().initialize();
     } catch {}
+    // Ad loads wait on this (shared/lib/ads-ready.ts), so none goes out before
+    // the consent answer is known.
+    resolveAdsReady(true);
   })();
 }
 
