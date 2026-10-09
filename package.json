@@ -11,6 +11,7 @@
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
     "db:push": "drizzle-kit push",
+    "db:push:prod": "node --env-file=.env.prod-db node_modules/drizzle-kit/bin.cjs push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "server:dev": "cross-env NODE_ENV=development tsx --env-file=.env server/index.ts",

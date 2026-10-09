@@ -11,6 +11,13 @@
         "ADMOB_APP_ID_ANDROID": "ca-app-pub-3940256099942544~3347511713"
       }
     },
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "bisca-staging.up.railway.app",
+        "ADMOB_APP_ID_ANDROID": "ca-app-pub-3940256099942544~3347511713"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "env": {
