@@ -36,10 +36,14 @@ export function reportAdLoadError(adType: AdType, error: unknown): void {
 /**
  * Emit an actual Sentry event — call when an ad surface gives up (retries
  * exhausted, or the surface has no retry). The code is part of the message so
- * Sentry groups issues per (ad type, failure reason).
+ * Sentry groups issues per (ad type, failure reason). No-fill is skipped: it
+ * is AdMob having no ad to sell, not actionable, and it flooded Sentry (fill
+ * rate lives in the AdMob console). The breadcrumb from reportAdLoadError stays.
  */
 export function reportAdGiveUp(adType: AdType, error: unknown): void {
   const { code, message } = errorFields(error);
+  // Covers "no-fill", "error-code-no-fill" and "mediation-no-fill".
+  if (code.includes('no-fill')) return;
   Sentry.captureMessage(`ad failed to load: ${adType} (${code})`, {
     level: 'warning',
     extra: { code, message },
